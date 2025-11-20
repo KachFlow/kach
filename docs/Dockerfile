@@ -5,6 +5,7 @@ WORKDIR /app
 # Install dependencies
 FROM base AS deps
 COPY package.json bun.lock ./
+COPY source.config.ts ./
 RUN bun install --frozen-lockfile
 
 # Build the application
