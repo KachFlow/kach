@@ -1,0 +1,78 @@
+---
+title: "Governance, Risk, and Controls"
+description: "Risk surface, mitigation toolkit, and emergency controls for Attestators."
+---
+
+Kach pairs open liquidity with permissioned usage, so the risk stack must be explicit. Attestators are the only credit counterparties, and every control is built around keeping their behavior inside well-understood limits while honoring depositor protections.
+
+## Risk profile
+
+- **Credit risk**: An Attestator could miss a repayment or default during a corridor disruption.
+- **Operational risk**: Rails, FX providers, or compliance systems might fail and delay flows.
+- **Stablecoin risk**: Issuers could freeze assets, depeg, or face regulatory action.<a href="/references#ref-9">[9]</a><a href="/references#ref-10">[10]</a>
+- **Protocol risk**: Bugs, misconfigured parameters, or governance errors could impact capital.
+- **Jurisdictional risk**: Rules for lending, stablecoins, or cross-border payments can change quickly.
+
+Attestators sign enforceable agreements, provide data access, and sit behind [Bayta](/glossary#bayta)-operated risk processes. Clients never become protocol counterparties; their only exposure is to the Attestator they selected off-chain.
+
+## Security posture and assurance
+
+- **Audits**: Third-party Move audits are required pre-mainnet and after material upgrades. Known issues and remediation timelines are published alongside governance minutes.
+- **Testing and invariants**: Unit/property tests cover deposit/withdrawals, PRT lifecycle, tranche accounting, utilization throttles, and pause logic. Critical invariants (e.g., no negative NAV, conservation of principal, monotonic unlock timestamps) are codified in tests plus checklist items for reviewers.
+- **Formal verification track**: Modules that touch balances (pool, NFT, PRT) target Move Prover specs for access control and asset movement paths. Coverage reports accompany release notes.
+- **Threat model**: Focus areas include Attestator misbehavior, bridge risk for cross-chain intake, oracle/input tampering on attestation payloads, admin key compromise, and stablecoin contract freezes.
+- **Dependency hygiene**: Off-chain services (attestation verifier, analytics pipelines) run with scoped access; artifacts are hashed and referenced on-chain where possible. Key management uses multisig and hardware enclaves for signing.
+- **Incident response**: Runbooks define when to pause draws/withdrawals, outbound comms timelines, and the order in which pools re-open. A 4-of-6 admin multisig can execute emergency pauses; signers and rotation procedures are documented.
+
+## Risk management toolkit
+
+- **Attestator selection & probation**: Underwriting focuses on companies that already operate in FX/remittance verticals, especially across Africa, [LATAM](/glossary#latam), and [APAC](/glossary#apac). Each Attestator must also maintain an enforceable parent or financing entity in the US (or comparable jurisdiction) where credit agreements are executed and collections occur. New Attestators pass through multi-month probation before limits scale.
+- **Trust Score & limits**: Every Attestator starts with a Trust Score baseline that moves up or down via an amount-weighted, decay-adjusted model with severity multipliers, anti-gaming loan-size rules, and a confidence factor based on history depth. Hard caps apply both per Attestator and across the pool; concentration limits prevent any single Attestator from exceeding, for example, 25% of total deployed capital or 30% of corridor exposure.
+- **Pool intake gating**: Deposits are permissionless, but each pool has a governance-set ceiling so capital only ramps when [utilization](/glossary#utilization), Attestator demand, and monitoring bandwidth can support it. Pools reopen when [utilization](/glossary#utilization) sits inside the target band for several epochs.
+- **Underwriting governance**: [Bayta](/glossary#bayta)’s credit committee proposes limits and tenor bands; governance (initially [Bayta](/glossary#bayta)-controlled, later KACH token holders) ratifies or adjusts them. Material issues can freeze draws immediately.
+- **Attestator guarantees & collateral**: Qualified Attestators post cash collateral, standby letters of credit, or parent-company guarantees sized to tenor and limit (typically 5–20% of headroom). Contracts allow [Bayta](/glossary#bayta) to sweep secured accounts or pursue the US/EU entity if receivables go past due.
+- **Legal enforceability**: Credit documentation references the Attestator’s US (or EU-equivalent) entity even if operational subsidiaries sit in LATAM or Africa. Agreements grant [Bayta](/glossary#bayta) step-in rights, require periodic covenant reporting, and specify arbitration venues so cross-border recovery is practical.
+- **LP transfers**: [Position NFTs](/glossary#position-nft) embed lock-up data. OTC trades cannot remove restrictions, and redemption only unlocks after the timestamp regardless of ownership.
+- **Utilization controls**: Pools target a [utilization](/glossary#utilization) band that leaves room for withdrawals. Governance can set per-sector or per-corridor caps when risk requires it and throttle deposits if senior liquidity ratios fall below thresholds.
+
+## Emergency controls
+
+An admin multisig can pause new loans, block withdrawals, or freeze parameter changes if risk monitoring detects an issue. Runbooks spell out when the pause can be used, how it is communicated, and in what order user withdrawals resume once the system reopens. As Kach decentralizes, these powers will narrow or migrate to community-elected committees.
+
+## Stress scenarios
+
+[Bayta](/glossary#bayta) rehearses corridor-specific stress tests quarterly. Example drills include:
+
+- **FX freeze**: Simulate NGN or ARS conversion shutdowns and verify that Attestators can demonstrate hedge positions, reduce draw requests, and honor maturities from USD reserves.
+- **Stablecoin freeze**: Model a USDC issuer freeze by pausing new draws, rotating liquidity into alternate assets (USDT, fully collateralized stables), and honoring withdrawals through buffers plus recovery waterfalls.
+- **Attestation failure**: Force-march scenarios where payload hashes or bank confirmations fail SLA; governance must demonstrate the ability to cut draws, escalate legal remedies, and notify LPs within 24 hours.
+
+Outputs from these tests feed directly into Trust Score adjustments, limit sizing, and reserve policy.
+
+## Data attestations and monitoring
+
+- Every draw carries a signed payload plus hashed banking proofs. Attestators must upload source logs within 12 hours of execution; missing payloads automatically suspend their draw permissions.
+- API feeds from banks, [PSP](/glossary#psp)s, and compliance vendors flow into [Bayta](/glossary#bayta)’s monitoring stack (ClickHouse + alerting). Any mismatch between fiat legs and PRT metadata raises an incident that must be resolved before the limit reopens.
+- Append-only Merkle logs generated by Attestators are checkpointed on Aptos so auditors can replay them and verify no post-hoc tampering occurred.
+
+## Stablecoin custody safeguards
+
+- Pool assets remain native Move resources; no omnibus custodians hold depositor balances, reducing unilateral freeze risk.
+- Governance mandates diversification across at least two approved stablecoins once liquidity scales, with issuer exposure caps and automatic rate adjustments when one asset dominates.
+- Emergency runbooks detail how to sweep assets if a stablecoin [contract](https://github.com/KachFlow/kach) is frozen, including staged withdrawals, alternate routing, or temporary protocol pauses.
+
+## Governance and multisig
+
+- Core admin powers (Attestator onboarding, limit changes, emergency pause) sit behind a 4-of-6 multisig comprising [Bayta](/glossary#bayta)’s CEO, risk lead, engineering lead, and two independent advisors plus an Aptos Foundation observer seat for the grant period.
+- Critical parameters (pool caps, reserve ratios, bridge approvals) require both multisig approval and on-chain timelocks so depositors receive notice before changes take effect.
+- Third-party Move audits run at least annually, and findings plus remediation timelines are published alongside governance minutes so LPs can track operational discipline.
+
+## Assumptions to monitor
+
+- Stablecoin issuers remain solvent and redeemable.
+- Aptos maintains uptime and finality guarantees.
+- Attestators operate under enforceable legal agreements.
+- On/off-ramp partners stay compliant with [AML](/glossary#aml)/[CFT](/glossary#cft) expectations.
+- Correlated stress - such as capital controls across multiple corridors - remains the largest tail risk, so scenario analysis and concentration caps are mandatory.
+
+The threat model evolves as [utilization](/glossary#utilization) climbs. Each governance cycle revisits these assumptions, updates risk parameters, and publishes outcomes so LPs can track how the real-world credit book behaves.

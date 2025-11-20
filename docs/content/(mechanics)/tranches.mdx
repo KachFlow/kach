@@ -1,0 +1,83 @@
+---
+title: "Tranches and Risk Layers"
+description: "Explains senior/mezz/junior structure and how losses/yield flow."
+---
+
+### Motivation
+
+Not all depositors have the same risk appetite. Some want stable, lower yields and stronger protection in stressed scenarios. Others are willing to absorb more risk in exchange for higher returns.
+
+Kach addresses this by offering **three [tranches](/glossary#tranche) per pool** and encoding the [tranche](/glossary#tranche) choice directly on each LP's [Position NFT](/glossary#position-nft) rather than issuing separate [tranche](/glossary#tranche) tokens. [Tranche](/glossary#tranche) metadata drives loss waterfalls, yield multipliers, and unlock logic, so secondary buyers cannot misrepresent their risk exposure; the NFT always discloses the layer it belongs to.
+
+-   **Senior Tranche**
+
+    -   Lowest risk, lowest yield.
+
+    -   Last to take losses in case of Attestator defaults.
+
+    -   Receives interest only after junior and mezzanine tranches have received their risk-adjusted share, subject to parameters.
+
+-   **Mezzanine Tranche**
+
+    -   Medium risk and medium yield.
+
+    -   Takes losses after junior but before senior.
+
+-   **Junior Tranche**
+
+    -   Highest risk, highest yield.
+
+    -   First-loss capital in case of Attestator defaults.
+
+    -   In a default scenario, junior holders see the largest proportional hit to their pool share, consistent with their higher reward.
+
+### Loss waterfall (conceptual)
+
+In a default event where an Attestator fails to repay:
+
+1.  The protocol calculates the net realized loss after any recoveries.
+
+2.  Losses are allocated in the following order:
+
+    -   First to the **Junior** tranche, up to 80% of junior principal.
+
+    -   Then to the **Mezzanine** tranche, up to 40% of mezz principal.
+
+    -   Finally to the **Senior** tranche up to 20%, if losses exceed the combined junior and mezz cushions.
+
+3.  Within each [tranche](/glossary#tranche), losses are shared pro rata according to the share counts and NAV multipliers encoded in each [Position NFT](/glossary#position-nft), so accounting and redemption amounts can be independently verified from on-chain metadata.
+
+Yield works in the opposite direction:
+
+-   Junior earns the highest base rate plus incentives.
+
+-   Mezzanine earns mid-range yield.
+
+-   Senior earns the lowest but most stable yield, buffered by the junior and mezz tranches.
+
+Exact percentages, spreads between tranches, and potential reserve layers can be configured by governance over time.
+
+### Initial parameter baselines
+
+Numbers below are the current working defaults for testnet and the planned mainnet alpha. They are governance-controlled and will be tuned once real performance data arrives.
+
+| Parameter | Default | Notes |
+| --- | --- | --- |
+| Target utilization band | 60–80% | Keeps headroom for withdrawals and Attestator draws. |
+| Deposit cap (per pool) | $10–25m during alpha | Raised only after clean repayment history and audit sign-off. |
+| Tenor bands | Standard 1–5 days; exceptional up to 30 days | Longer tenors gated to top Trust Scores with additional guarantees. |
+| Base rate (senior / mezz / junior) | 6% / 10% / 16% APR | Applies at 60% utilization; scales with utilization slope. |
+| Utilization slope | +1–2% APR increase per 10% utilization above target | Preserves liquidity buffer while rewarding higher deployment. |
+| Yield multipliers (by tranche) | Senior 0.8×, Mezz 1.0×, Junior 1.3× | Applied to the base rate after utilization adjustment. |
+| Reserve skim | 5–10% of gross interest | Funds protocol reserves before tranche distribution. |
+| Loss waterfall caps | Junior first-loss up to 80% of its principal, Mezz up to 40%, Senior up to 20% | Caps can tighten or loosen per pool. |
+| Concentration limits | Max 25–30% exposure to any single Attestator or corridor | Enforced at underwriting and draw time. |
+
+Calculating yield (simplified):
+
+1. Start with the base rate at the current utilization band.
+2. Apply the tranche multiplier (senior 0.8×, mezz 1.0×, junior 1.3×).
+3. Skim 5–10% of gross interest to reserves.
+4. Allocate the remainder to each tranche pro rata by share count and NAV index.
+
+These parameters are encoded on-chain per pool and can be versioned so historical Position NFTs always reference the rule set in effect when they were minted.

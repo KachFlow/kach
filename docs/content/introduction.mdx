@@ -1,0 +1,39 @@
+---
+title: "Introduction"
+description: "Context for trapped liquidity and why short-tenor stablecoin credit matters."
+---
+
+In film, “every frame a painting” is shorthand for total control of what the audience sees. Global payments deserve the same level of craft. Every dollar should move because someone needs it, not because a bank is afraid a future wire might bounce.
+
+Reality still runs on the old playbook. Providers pre-fund nostro and vostro accounts in dozens of currencies, keep daylight buffers at correspondent banks, and wait for batch windows to close before money finally lands. Those guardrails prevent disasters, but they also lock trillions of dollars in limbo for hours or days at a time.<a href="/references#ref-15">[15]</a><a href="/references#ref-16">[16]</a><a href="/references#ref-17">[17]</a>
+
+Cross-border activity is too large for that approach to hold forever. FXC Intelligence and similar datasets peg 2024 volumes above USD 190 trillion with steady 5% annual growth projected this decade.<a href="/references#ref-11">[11]</a><a href="/references#ref-14">[14]</a> An IMF working paper that tallies “traditional plus crypto” rails puts the combined gross value closer to a quadrillion.<a href="/references#ref-13">[13]</a> Independent research lines up on a simple point: more money moves across borders each year, and every extra turn of volume consumes even more idle float under today’s architecture.
+
+Stablecoins and modern settlement rails are already a major part of emerging-market remittances, B2B payouts, and digital commerce, yet most of that liquidity still lives in passive treasuries or on-chain strategies divorced from real-world flows.<a href="/references#ref-9">[9]</a><a href="/references#ref-10">[10]</a> On Aptos specifically, circulating supply sits in the low billions while monthly transfer volume regularly hits the tens of billions.<a href="/references#ref-3">[3]</a><a href="/references#ref-4">[4]</a><a href="/references#ref-5">[5]</a> The opportunity is to redirect that capital toward timing gaps in regulated corridors instead of leaving it parked.
+
+## Problem: Pre-Funding, Timing Gaps, Idle Liquidity
+
+Correspondent banking is deliberately conservative. Providers pre-fund, respect FX cutoffs, and hold buffers so nothing breaks. The tradeoffs show up everywhere:
+
+- **Capital trapped**: Float sits inside dozens of nostro/vostro accounts and subsidiaries just in case a payment arrives late.
+- **Slow timing**: Cutoffs and netting windows push payouts to T+1 or T+2, forcing operators to overfund to avoid daylight overdrafts.
+- **Fragile FX access**: Local currency squeezes or capital controls can halt payouts even if the group has ample USD elsewhere.
+- **Operational drag**: Teams reconcile ledgers and SWIFT messages across partners, each with its own risk policies and limits.
+
+Kach swaps those dormant balances for on-demand credit. Attestators borrow precisely what a corridor needs, settle the fiat legs, and repay within a few days so liquidity is immediately available for the next payment.
+
+### Example flow: NGN → CNY
+
+1. A Nigerian importer wires NGN 4.5 billion (≈USD 5 million) to its regulated payment partner.
+2. Onshore USD liquidity is tight, so sourcing $5 million locally would take several days and push the FX rate higher.
+3. The partner draws $5 million USDC from its Kach limit for a three-day cycle priced at 20 bps.
+4. Stablecoins move to a Shenzhen payout partner, convert to CNY within minutes, and the supplier ships on schedule.
+5. Over the next 72 hours the partner converts NGN back to USDC, repays $5 million plus $10,000 interest and the limit reopens.
+
+Instead of parking $5 million in a Chinese nostro “just in case,” the partner uses pooled liquidity exactly when needed, keeps clients on schedule, and generates yield for depositors in the process.
+
+### Stablecoin liquidity looking for work
+
+Stablecoins now measure in the hundreds of billions of dollars, with tens of millions of active wallets every month. On Aptos alone, circulating supply is in the low billions and monthly transfer volume regularly hits the tens of billions. Yet only a fraction of that value touches real-world settlement. Treasury desks sit on dry powder, funds park reserves in cash-equivalent vaults, and on-chain strategies recycle liquidity within crypto-native loops.
+
+Kach plugs that slack into practical usage. Depositors earn from short-tenor, underwritten receivables, Attestators close the timing gap between client fiat and cross-border payouts, and fiat-only clients never have to touch a blockchain.

@@ -1,0 +1,91 @@
+---
+title: "Token and Incentives"
+description: "Explains the points ledger, tokenless launch, and future KACH mechanics."
+---
+
+## Tokenless launch
+
+At launch, Kach operates **without** a live token:
+
+-   All fees and interest flows are handled in stablecoins.
+
+-   Governance is controlled by [Bayta Co.](/glossary#bayta) and designated committees.
+
+## Points and future KACH distribution
+
+A **points system** tracks participation, including:
+
+-   Depositor behavior:
+
+    -   Amount and duration of liquidity supplied.
+
+    -   [Tranche](/glossary#tranche) and lock-up choice.
+
+-   Attestator behavior:
+
+    -   Volume processed through Kach.
+
+    -   On-time repayment and Trust Score evolution.
+
+-   Ecosystem contributions:
+
+    -   Integrations,
+
+    -   Referrals,
+
+    -   Tooling and risk model improvements.
+
+These points are intended to be used in the future for:
+
+- **KACH token airdrops** or distributions.
+- Governance rights.
+- Revenue-sharing or protocol fee rebates.
+
+## Incentive design
+
+Beyond base yield:
+
+-   **Depositors** can:
+
+    -   Earn points for longer commitments, riskier [tranches](/glossary#tranche), and periods of high [utilization](/glossary#utilization).
+
+    -   Gain priority in future KACH allocations.
+
+-   **Attestators** can:
+
+    -   Improve Trust Scores with consistent on-time repayment.
+
+    -   Qualify for lower rates, higher limits, and reputational benefits (leaderboard rankings).
+
+    -   Earn points for routing more volume through Kach.
+
+-   **Leaderboards**:
+
+    -   Public, on-chain leaderboards for top-performing Attestators and depositors improve transparency and create soft reputational pressure.
+
+    -   This also supports community oversight and aligns behavior with long-term protocol health.
+
+## Protocol revenue and reserves
+
+The protocol earns in stablecoins; there is no live token at launch.
+
+- **Interest skim**: 5–10% of gross Attestator interest routes to the protocol reserve before tranche distribution. This funds operations, insurance buffers, and future audits.
+- **Penalty fees**: Late repayments or Trust Score downgrades trigger penalty interest that also flows to reserves.
+- **Attestator onboarding fees**: One-time or periodic fees (denominated in stablecoins) can apply to new limits to cover underwriting costs.
+- **Bridge/intake fees (optional)**: Cross-chain deposits may carry a small fee to cover routing and risk controls; waived when demand requires acceleration.
+- **NFT lifecycle fees (keep minimal)**: Split/merge actions for Position NFTs stay free or near zero; the only goal is to prevent spam, not to monetize.
+
+Allocation policy (governance-controlled):
+
+- First fund the protocol reserve to a target buffer (e.g., months of opex + tail-risk cushion).
+- Then cover core ops (attestation verifier, monitoring, incident response).
+- Surplus, if any, can later be directed by governance to buybacks, grants, or fee reductions once a token exists.
+
+## Governance runway
+
+- **Phase 0: Bootstrap (now)** – [Bayta Co.](/glossary#bayta) operates multisig-controlled parameters (pool caps, Attestator onboarding, pause). Weekly ops notes and parameter changes are published with rationale.
+- **Phase 1: Guarded governance (post-audit, mainnet alpha)** – Expand the multisig to include an Aptos Foundation observer and an independent risk advisor. Add timelocks for non-emergency changes and public change logs for rates, utilization targets, and reserve skims.
+- **Phase 2: Token-enabled committees (post-utilization milestones)** – Introduce KACH governance where token holders elect committee members for risk, parameters, and treasury. Votes ratify limit proposals, bridge allowlists, and tranche mixes. Community veto over non-emergency changes with short timelocks.
+- **Phase 3: Broader token governance (after proven loss performance)** – Delegate budgets for grants/tooling, rotate committee seats on cadence (e.g., quarterly), and constrain admin keys to emergency-only functions with mandatory reporting and post-mortems.
+
+Decision transparency stays mandatory in every phase: published minutes, signer lists, quorum rules, and a registry of active parameter sets so LPs and Attestators can verify the governance surface area.

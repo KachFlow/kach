@@ -1,0 +1,10 @@
+{
+  "title": "Core System",
+  "pages": [
+    "overview",
+    "actors",
+    "kachflow",
+    "example",
+    "lifecycle"
+  ]
+}

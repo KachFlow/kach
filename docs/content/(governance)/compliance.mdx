@@ -1,0 +1,40 @@
+---
+title: "Compliance"
+description: "Defines the regulatory perimeter, onboarding process, and non-goals."
+---
+
+Kach never touches retail fiat flows. Liquidity moves in stablecoins on Aptos, and only licensed institutions can access it. Everything else (client onboarding, [AML](/glossary#aml), sanctions checks, and fiat custody) stays with the Attestators who already hold the relevant licenses.
+
+## Perimeter
+
+- **Attestators**: Money transmitters, [EMIs](/glossary#emi), [PSPs](/glossary#psp), VASPs, or similarly regulated entities operating within their jurisdictions. They ingest client fiat, perform [AML](/glossary#aml)/KYC, and manage local payouts.
+- **Kach**: Supplies short-term stablecoin credit to those entities under enforceable agreements. The protocol does not take consumer deposits, originate retail loans, or move fiat itself.
+- **Depositors**: Face protocol risk, Attestator performance, and the underlying stablecoin/chain risk. They do not become lenders of record to end clients.
+
+## Onboarding & proof
+
+Every Attestator must:
+
+1. Pass [KYB](/glossary#kyb) and licensing checks through third-party providers (e.g., Sumsub, Plaid, local registries).
+2. Share [AML](/glossary#aml), transaction-monitoring, and sanctions policies.
+3. Prove operating history with financial statements and bank data.
+
+Only once those packages are approved does an Attestator address get whitelisted on-chain.
+
+## Jurisdictional focus
+
+Kach prioritizes operators that:
+
+- Serve Africa, [LATAM](/glossary#latam), and [APAC](/glossary#apac) corridors where FX friction is highest.
+- Maintain entities in enforceable jurisdictions (US, EU, or equivalent) so credit agreements can be upheld in court.
+
+Regions that prohibit stablecoins or cross-border lending, or where enforcement is impractical, stay off-limits.
+
+## Non-goals
+
+Kach does not:
+
+- Offer retail credit or consumer loans.
+- Provide leverage for speculative trading.
+- Issue synthetic assets or algorithmic stablecoins.
+- Replace Attestators' [AML](/glossary#aml)/[CFT](/glossary#cft) responsibilities; they remain on the hook for compliance in every corridor they serve.

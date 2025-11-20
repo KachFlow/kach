@@ -1,0 +1,28 @@
+---
+title: "Why Aptos"
+description: "Rationale for building on Aptos and the platform advantages Kach needs."
+---
+
+Kach is more than a lending UI. It is a bridge between idle pools of capital—family offices, FIRE investors, payroll treasuries, even pensions once the protocol is seasoned—and the timing gaps that slow global commerce. If we do our job, retirement funds can stake stablecoins for predictable yields, small businesses can execute payouts without refinancing warehouses, and the same dollar can settle dozens of real invoices per month. That future only works if the base chain behaves like a high-trust settlement utility, not a hobbyist network.
+
+We are composing real-world finance with DeFi, and we refuse to make end users suffer the same latency and opacity that plague correspondent banking. Credit cycles last days, not months. Limits reopen instantly. Depositors need transparency worthy of public markets, while Attestators need rails that feel like wires, not mempools. That is why the chain choice matters as much as the product design.
+
+### What the base layer must guarantee
+
+- **Security without compromise**: Institutional allocators and regulated Attestators cannot park client money on a chain that sacrifices safety for experimentation.
+- **Formal verification and auditability**: Credit waterfalls, Position NFTs, and receivable ledgers must be provably correct so auditors, regulators, and retirement committees can sign off.
+- **Deterministic speed**: A protocol that recycles liquidity every 1–5 days cannot tolerate congestion spikes or minutes-long finality.
+- **User abstraction**: Retail and enterprise depositors should never learn new jargon to earn yield; wallets, custody platforms, and analytics must integrate cleanly.
+- **Future-proof decentralization**: Governance, risk committees, and eventually token holders need a path to operate without a centralized operator relaying transactions.
+
+### How Aptos keeps that future scalable
+
+Aptos is purpose-built for high-volume stablecoin usage: parallel execution via Block-STM, sub-second finality, predictable fees, and an ecosystem already processing billions of dollars in monthly transfers.<a href="/references#ref-3">[3]</a><a href="/references#ref-4">[4]</a><a href="/references#ref-5">[5]</a> That combination makes it a fitting home for a credit engine that redeploys liquidity dozens of times per month.
+
+1. **Native stablecoin liquidity**: USDC, USDT, and newer institutional-grade stablecoins already circulate on Aptos in size.<a href="/references#ref-3">[3]</a><a href="/references#ref-5">[5]</a><a href="/references#ref-8">[8]</a> Kach plugs directly into that base instead of bridging wrapped assets or maintaining “synthetic” accounting layers.
+2. **Institutional-grade architecture**: The Move language treats assets as resources, making double-spends and accounting mistakes easier to prevent at the type-system level.<a href="/references#ref-1">[1]</a> Formal verification tooling plus first-party audits give regulators and counterparties higher comfort.
+3. **Parallel execution and fast finality**: Block-STM batches independent transactions and finalizes blocks in under a second.<a href="/references#ref-3">[3]</a><a href="/references#ref-4">[4]</a> Multiple Attestators can draw, repay, and adjust limits simultaneously without clogging the chain.
+4. **Predictable, low fees**: Fee volatility erodes short-tenor economics. Aptos keeps transaction costs negligible so credit cycles remain attractive even at high frequency.
+5. **Global reach**: Aptos teams already partner with wallets, exchanges, and fintechs across Latin America, Africa, and [APAC](/glossary#apac).<a href="/references#ref-6">[6]</a><a href="/references#ref-7">[7]</a> That distribution matters for Kach because Attestators often operate in those same corridors.
+
+Kach’s promise is “every dollar keeps moving.” Aptos gives us the security, speed, and developer ergonomics to extend that promise from crypto-native LPs to retirees, FIRE savers, and the treasuries that keep global trade running—without forcing anyone to relive the frictions of traditional finance.

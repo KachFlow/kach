@@ -1,0 +1,166 @@
+---
+title: "KachFlow: Short-Term Stablecoin Credit Engine"
+description: "How Kach issues, prices, and manages rapid stablecoin credit cycles."
+---
+
+## Core idea
+
+**KachFlow** is the credit engine that drives Kach: a **short-term, stablecoin-based lending system secured by real-world payment flows** designed specifically for those settlement cycles.
+
+Key properties:
+
+- Tenor: **1-5 days** for standard cycles.
+- Extended terms: selectively up to **30-90 days** for Attestators with strong performance and underwriting.
+- Rate: a base **per-cycle rate** (for example, 20 basis points for a 1-5 day draw) that can be varied by governance and per Attestator.
+
+The insight is simple: **velocity compounds**. The same unit of stablecoin can be deployed multiple times per month if:
+
+1.  Credit cycles are short,
+
+2.  Attestators repay reliably, and
+
+3.  The protocol can redeploy repayments immediately.
+
+Unlike traditional credit systems that earn more when debtors pay late, Kach explicitly rewards early or on-time Attestator repayments with higher Trust Scores, lower per-cycle rates, and faster access to upgraded limits, aligning protocol efficiency with settlement-provider behavior.
+
+Every draw also mints a **Payment Receivable Token (PRT)**. The token is non-transferable, held by the pool [contract](https://github.com/KachFlow/kach), and captures the draw's principal, rate, tenor, timestamp metadata, Attestator identifier, Trust Score snapshot, and attestation hash. PRTs accrue until repayment (or default), then burn to release realized yield to [tranche](/glossary#tranche)-specific NAV curves, keeping the on-chain ledger the canonical view of outstanding receivables.
+
+## Example economics (illustrative)
+
+Assume:
+
+- Base rate: **20 bps (0.20%)** per **3-day** credit cycle.
+- Full [utilization](/glossary#utilization) of a unit of liquidity for every cycle.
+
+Then the implied annualized yield before fees is:
+
+- $$\frac{365}{3} \approx 121.7$$ cycles per year.
+- Nominal rate $$0.002 \times 121.7 \approx 24.3\%$$.
+- Compounding APY $$ (1 + 0.002)^{365/3} - 1 \approx 27.5\% $$.
+
+Translating that [utilization](/glossary#utilization) into potential protocol revenue, assume **USD 50 million** of liquidity remains fully deployed at the same cadence and rate:
+
+```math
+\text{Gross revenue}_{\text{annual}} = 50{,}000{,}000 \times 0.002 \times 121.7 \approx 12{,}170{,}000
+```
+
+For longer cycles, for example **5 days**:
+
+- $$\frac{365}{5} = 73$$ cycles per year.
+- Compounding APY $$ (1 + 0.002)^{365/5} - 1 \approx 15.7\% $$.
+
+In reality:
+
+- [Utilization](/glossary#utilization) is less than 100%.
+- Some liquidity must remain available for withdrawals.
+- Attestator risk and operational constraints limit total exposure.
+- [Tranche](/glossary#tranche) choices and lock-ups change the distribution of yield to LPs.
+
+A realistic target band for depositors, under conservative assumptions, can be framed in the **high single to low double-digit APY range**, with upside when [utilization](/glossary#utilization) and performance allow, and downside if demand or repayment reliability weaken. Exact rates are subject to governance, pool performance, and risk constraints.
+
+## Trust Score and Limits
+
+Every Attestator has a **Trust Score** that governs rate tiers and draw headroom. Clients do not receive Trust Scores; they remain entirely outside protocol risk.
+
+### Data inputs (per Attestator)
+
+- `good_volume`: Sum of on-time repayments (amount-weighted after decay).
+- `late_volume`: Sum of late repayments (amount-weighted after decay).
+- `default_volume`: Sum of defaulted principal (amount-weighted after decay).
+- `good_count` / `late_count` / `default_count`: Event counts.
+- `total_loans`: All loans ever drawn (used for confidence).
+- `effective_amount = loan_amount^p`: Per-loan weighting with a concave power (p \< 1) to smooth very large draws; p=1 preserves raw amounts; p=0 collapses to pure counts.
+
+All volumes are updated with **recency decay** each epoch: `good_volume *= decay_factor`, `late_volume *= decay_factor`, `default_volume *= decay_factor`, where `decay_factor` is slightly below 1 so recent behavior dominates.
+
+### Scoring logic
+
+1) **Volume-weighted score**  
+   - Compute weighted volumes: `good = Σ effective_good`, `late = Σ w_late * effective_late`, `default = Σ w_default * effective_default`, where `w_default > w_late > 1` to punish severity.  
+   - Normalize: `volume_score = base + g(good, late, default)` where g rewards good and subtracts late/default.
+
+2) **Count-based score**  
+   - Use event counts with the same severity ordering to avoid bias toward a few large loans: `count_score = base + h(good_count, late_count, default_count)` where h rewards punctuality and penalizes late/default counts.
+
+3) **Hybrid combination**  
+   - `raw_score = a * volume_score + b * count_score`, with `a` and `b` set by governance to balance amount vs frequency.
+
+4) **Confidence adjustment**  
+   - `confidence = f(total_loans)` where f grows with history depth (e.g., logarithmic).  
+   - `final_score = raw_score * confidence`, stabilizing scores for proven borrowers and tempering scores for those with few data points.
+
+5) **Anti-gaming loan sizing**  
+   - Maximum eligible draw scales with proven, decayed good volume: `max_loan_amount = k * good_volume`. Small, punctual loans alone cannot unlock a jump to outsized draws.
+
+6) **No hard caps / no permanent scars**  
+   - Defaults and lates fade with decay; there are no irreversible caps. Recovery is possible through sustained good volume.
+
+### How risk and limits evolve
+
+- Scores update each epoch (e.g., monthly/quarterly) by applying decay, ingesting new PRT outcomes, and recomputing the hybrid score. High weight on recent volume means fresh performance moves the needle fastest.
+- Limits, rates, and tenor bands reference the Trust Score plus the anti-gaming rule. Large headroom only follows after equivalent repaid volume.
+- Governance can tune `p`, `decay_factor`, `w_late`, `w_default`, and weights `a/b` without changing the model shape.
+
+Kach focuses on Attestator behavior and aggregate exposures, leaving FX routing and client-level risk to the Attestator's licensed operations.
+
+#### Example parameter ranges (tunable)
+
+- `p` (concavity): 0.6–0.9 (0.8 default)  
+- `decay_factor`: 0.90–0.98 per epoch  
+- `w_late`: 1.2–1.8; `w_default`: 2.5–4.0  
+- `a` (volume weight): 0.6–0.8; `b` (count weight): 0.2–0.4  
+- `confidence f(n)`: e.g., `f(n) = 0.5 + log(1+n)` capped at a ceiling to avoid runaway boosts  
+- `k` (max loan scale): 0.5–1.0× of decayed good volume
+
+#### Pseudocode (illustrative)
+
+```text
+for each epoch:
+  base = base_floor  # starting point for scores
+  # Decay history
+  good_volume    *= decay_factor
+  late_volume    *= decay_factor
+  default_volume *= decay_factor
+
+  # Ingest outcomes with concave weighting
+  for loan in loans_settled_this_epoch:
+      eff = loan.amount ** p
+      if loan.status == "good":
+          good_volume  += eff
+          good_count   += 1
+      elif loan.status == "late":
+          late_volume  += eff
+          late_count   += 1
+      elif loan.status == "default":
+          default_volume += eff
+          default_count  += 1
+      total_loans += 1
+
+  # Volume score with severity multipliers
+  volume_score = base
+  volume_score += reward_fn(good_volume)
+  volume_score -= penalty_fn(w_late * late_volume + w_default * default_volume)
+
+  # Count score with severity ordering
+  count_score = base
+  count_score += reward_fn(good_count)
+  count_score -= penalty_fn(late_count + stronger(default_count))
+
+  raw_score   = a * volume_score + b * count_score
+  confidence  = f(total_loans)  # e.g., 0.5 + log(1+total_loans)
+  final_score = raw_score * confidence
+
+  max_loan_amount = k * good_volume  # anti-gaming guardrail
+```
+
+## Proof-of-Settlement Controls
+
+Kach requires every Attestator to prove that fiat legs moved as instructed. The verification stack includes:
+
+- **Signed payloads**: Each draw produces a structured payload (client instructions, fiat receipt references, timestamps) that the Attestator signs. The hash of this payload anchors into the corresponding PRT.
+- **API integrations**: Bank, [PSP](/glossary#psp), and internal ledgers stream settlement updates into [Bayta](/glossary#bayta)'s risk tooling, which cross-checks them against attestation payloads before limits reopen.
+- **Hash-committed logs**: Attestators maintain append-only logs of fiat receipts/payments whose Merkle roots or hashes are periodically published so tampering is detectable.
+- **Audits and anomaly detection**: Periodic audits and automated monitors flag timing deviations, FX mismatches, or missing attestations for manual follow-up.
+- **Kill switches**: Governance (initially [Bayta](/glossary#bayta)) can pause an Attestator's draw permissions immediately upon detecting misuse or failed attestations, isolating risk from the rest of the pool.
+
+Need a detailed walkthrough? Read the standalone [Example Flow](/example) page for the NGN→CNY case study.

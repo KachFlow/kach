@@ -1,0 +1,13 @@
+{
+  "title": "Kach: On-Demand Stablecoin Credit Rails",
+  "defaultOpen": true,
+  "pages": [
+    "index",
+    "introduction",
+    "./(core)",
+    "./(mechanics)",
+    "./(governance)",
+    "./(strategy)",
+    "./(resources)"
+  ]
+}
