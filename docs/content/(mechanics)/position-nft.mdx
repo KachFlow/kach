@@ -54,16 +54,14 @@ Unlike simple pool tokens, Position NFTs capture:
 
 ## Position NFT Structure
 
-```move
-struct PositionNFT<phantom FA> {
-    pool_addr: address,           // Which pool this belongs to
-    tranche: u8,                  // 0=Senior, 1=Junior
-    shares: u64,                  // Share count in this tranche
-    nav_index_at_creation: u128,  // [NAV](/glossary#nav) multiplier when created
-    lock_until_timestamp: u64,    // Cannot redeem before this time
-    created_at: u64               // Creation timestamp
-}
-```
+Each Position NFT contains the following metadata:
+
+- **pool_addr**: Address of the specific pool (e.g., USDC pool)
+- **tranche**: 0=Senior, 1=Junior
+- **shares**: Share count in this tranche
+- **nav_index_at_creation**: [NAV](/glossary#nav) multiplier when created
+- **lock_until_timestamp**: Cannot redeem before this time
+- **created_at**: Creation timestamp
 
 ### Field Details
 
@@ -99,17 +97,7 @@ struct PositionNFT<phantom FA> {
 
 ## Minting Position NFTs
 
-When a liquidity provider deposits, they receive a Position NFT:
-
-```move
-public entry fun deposit<FA>(
-    depositor: &signer,
-    pool_addr: address,
-    amount: u64,
-    tranche: u8,
-    lock_duration_seconds: u64
-)
-```
+When a liquidity provider deposits, they receive a Position NFT.
 
 **Process**:
 1. Depositor transfers stablecoins to pool
@@ -134,15 +122,6 @@ public entry fun deposit<FA>(
 
 Position NFTs are **fully transferable** using standard NFT transfer functions:
 
-```move
-// Transfer to another address
-object::transfer<PositionNFT<FA>>(
-    current_owner,
-    position_nft,
-    new_owner_address
-)
-```
-
 **What Travels with Transfer**:
 - All position details (tranche, shares, [NAV](/glossary#nav) index)
 - Lock-up period (new owner must wait until unlock)
@@ -158,21 +137,53 @@ object::transfer<PositionNFT<FA>>(
 
 **Important**: The lock-up restriction travels with the NFT. If you buy a position with 60 days remaining lock-up, you must wait 60 days to redeem.
 
-## Splitting Position NFTs
+## Position NFT Operations Overview
 
-The **split** operation divides one Position NFT into two, enabling partial exits or portfolio diversification:
+```mermaid
+stateDiagram-v2
+    [*] --> Minted: Deposit USDC
 
-```move
-public entry fun split_position<FA>(
-    owner: &signer,
-    position_addr: address,
-    shares_for_new: u64
-)
+    Minted --> Split: split_position()
+    Split --> NFT_A: Original (7K shares)
+    Split --> NFT_B: New (3K shares)
+
+    NFT_A --> Merged: merge_positions()
+    NFT_B --> Merged
+    Merged --> Combined: Single NFT (10K shares)
+
+    Minted --> Transferred: transfer()
+    NFT_A --> Transferred
+    Combined --> Transferred
+    Transferred --> NewOwner: Ownership + Terms Preserved
+
+    NewOwner --> Withdrawn: burn + redeem (after unlock)
+    Combined --> Withdrawn
+    Minted --> Withdrawn
+
+    Withdrawn --> [*]: USDC returned
+
+    note right of Split
+        Requirements:
+        - Same owner
+        - shares_for_new < total
+    end note
+
+    note right of Merged
+        Requirements:
+        - Same pool, tranche
+        - Same lock-up timestamp
+        - Same NAV index
+    end note
+
+    note right of Transferred
+        Lock-up and terms
+        travel with NFT
+    end note
 ```
 
-**Parameters**:
-- `position_addr`: Address of the Position NFT to split
-- `shares_for_new`: How many shares go to the new NFT
+## Splitting Position NFTs
+
+The **split** operation divides one Position NFT into two, enabling partial exits or portfolio diversification.
 
 **Process**:
 1. Verify owner owns the position
@@ -232,15 +243,7 @@ public entry fun split_position<FA>(
 
 ## Merging Position NFTs
 
-The **merge** operation combines two compatible Position NFTs into one:
-
-```move
-public entry fun merge_positions<FA>(
-    owner: &signer,
-    position1_addr: address,
-    position2_addr: address
-)
-```
+The **merge** operation combines two compatible Position NFTs into one.
 
 **Compatibility Requirements**:
 Both positions must have:
@@ -344,14 +347,7 @@ yield = shares × (current_nav - nav_at_creation) / 1e18
 
 ## Redeeming Position NFTs
 
-When the lock-up period expires, the owner can redeem their position:
-
-```move
-public entry fun redeem_position<FA>(
-    owner: &signer,
-    position_addr: address
-)
-```
+When the lock-up period expires, the owner can redeem their position.
 
 **Process** (not fully implemented, see note below):
 1. Verify owner owns position
@@ -374,13 +370,8 @@ public entry fun redeem_position<FA>(
 Query position details without modifying state:
 
 ### Get Position Details
-```move
-public fun get_position_details<FA>(
-    position_addr: address
-): (address, u8, u64, u128, u64, u64)
-```
 
-Returns:
+Returns position metadata:
 - pool_addr
 - tranche
 - shares
@@ -389,19 +380,10 @@ Returns:
 - created_at
 
 ### Check if Redeemable
-```move
-public fun is_redeemable<FA>(position_addr: address): bool
-```
 
 Returns true if current time ≥ unlock timestamp.
 
 ### Calculate Current Value
-```move
-public fun calculate_value<FA>(
-    position_addr: address,
-    current_nav: u128
-): u64
-```
 
 Returns current value in stablecoin units based on provided [NAV](/glossary#nav).
 
@@ -520,37 +502,10 @@ Build structured products:
 - `get_position_details<FA>()`: Query position data
 
 **Events Emitted**:
-```move
-struct PositionMinted<phantom FA> {
-    position_addr: address,
-    owner: address,
-    pool: address,
-    tranche: u8,
-    shares: u64,
-    nav_index: u128
-}
-
-struct PositionSplit<phantom FA> {
-    original_addr: address,
-    new_addr: address,
-    original_shares: u64,
-    new_shares: u64
-}
-
-struct PositionsMerged<phantom FA> {
-    kept_addr: address,
-    burned_addr: address,
-    total_shares: u64,
-    merged_nav: u128
-}
-
-struct PositionRedeemed<phantom FA> {
-    position_addr: address,
-    owner: address,
-    shares: u64,
-    amount_redeemed: u64
-}
-```
+- `PositionMinted`: position_addr, owner, pool, tranche, shares, nav_index
+- `PositionSplit`: original_addr, new_addr, original_shares, new_shares
+- `PositionsMerged`: kept_addr, burned_addr, total_shares, merged_nav
+- `PositionRedeemed`: position_addr, owner, shares, amount_redeemed
 
 ## Best Practices
 
@@ -609,7 +564,7 @@ struct PositionRedeemed<phantom FA> {
 
 ## Related Documentation
 
-- [Tranches & Risk Layers](/mechanics/tranches): Understanding risk/return profiles
-- [Pool Mechanics](/mechanics/architecture): How pools manage liquidity
-- [Lifecycle](/core/lifecycle): Full user journey including deposits
+- [Tranches & Risk Layers](/tranches): Understanding risk/return profiles
+- [Pool Mechanics](/architecture): How pools manage liquidity
+- [Lifecycle](/lifecycle): Full user journey including deposits
 - [Glossary - Position NFT](/glossary#position-nft): Quick reference

@@ -97,6 +97,26 @@ For prefund PRTs with partial repayments, interest is calculated based on **actu
 interest = outstanding_principal × rate_bps × (days_elapsed / total_tenor_days) / 10000
 ```
 
+**Visual Timeline**:
+
+```mermaid
+gantt
+    title Prefund PRT Repayment Timeline (30-day tenor, 120 bps)
+    dateFormat X
+    axisFormat Day %L
+
+    section Principal Outstanding
+    $10,000 outstanding    :0, 10
+    $5,000 outstanding     :10, 20
+    $2,000 outstanding     :20, 28
+    Fully repaid          :28, 30
+
+    section Repayments
+    Repay $5,000 + $40 int :milestone, 10, 0
+    Repay $3,000 + $20 int :milestone, 20, 0
+    Repay $2,000 + $6.40 int :milestone, 28, 0
+```
+
 **Example Scenario**:
 
 **Loan Details**:
@@ -128,6 +148,13 @@ interest = outstanding_principal × rate_bps × (days_elapsed / total_tenor_days
 **Total Interest Paid**: $40 + $20 + $6.40 = **$66.40**
 
 **Interest Saved**: $120 - $66.40 = **$53.60** (44.7% savings)
+
+```mermaid
+graph LR
+    A[Full-Term Scenario] -->|$10K for 30 days| B[Interest: $120]
+    C[Early Repayment] -->|Time-weighted| D[Interest: $66.40]
+    D -->|Savings| E[$53.60 saved<br/>44.7% reduction]
+```
 
 This rewards borrowers for repaying principal early, reducing the capital tied up and allowing the pool to redeploy faster.
 
@@ -175,6 +202,25 @@ Because the current implementation discounts more than the saved interest, aggre
 When interest is received, it's distributed according to the tranche waterfall:
 
 ### Distribution Waterfall
+
+```mermaid
+graph TD
+    A[Gross Interest: $1,000] --> B{Protocol Fee: 7%}
+    B -->|$70| C[Protocol Reserve]
+    B -->|$930 remaining| D[Calculate Tranche Weights]
+
+    D --> E[Senior: $80M × 0.8 = 64M weight]
+    D --> F[Junior: $20M × 1.3 = 26M weight]
+
+    E --> G[Total Weight: 90M]
+    F --> G
+
+    G --> H[Senior Share: 64/90 = 71%]
+    G --> I[Junior Share: 26/90 = 29%]
+
+    H -->|$660| J[Senior LPs<br/>$660 ÷ $80M = 0.825% yield]
+    I -->|$270| K[Junior LPs<br/>$270 ÷ $20M = 1.35% yield]
+```
 
 1. **Protocol Fee**: 7% of gross interest (configurable via governance)
    - Goes to protocol reserve
@@ -374,70 +420,26 @@ LP Yields (Monthly):
 
 ## Technical Implementation
 
-### Key Contract Functions
+The protocol implements the following key contract functions in `interest_rate.move`:
 
-**Get Rate for Tenor** (`interest_rate.move`):
-```move
-public fun get_rate_for_tenor(tenor_seconds: u64): u64
-```
-
-Returns the rate in basis points for a valid tenor. Aborts if tenor is not supported.
-
-**Validate Tenor** (`interest_rate.move`):
-```move
-public fun is_valid_tenor(tenor_seconds: u64): bool
-```
-
-Checks if a tenor is one of the five supported options.
-
-**Calculate Time-Weighted Interest** (`interest_rate.move`):
-```move
-public fun calculate_time_weighted_interest(
-    outstanding_principal: u64,
-    rate_bps: u64,
-    days_elapsed: u64,
-    total_tenor_days: u64
-): u64
-```
-
-Calculates interest for a portion of principal over a time period (used in prefund repayments).
-
-**Calculate Early Repayment Discount** (`interest_rate.move`):
-```move
-public fun calculate_early_repayment_discount(
-    repayment_amount: u64,
-    rate_bps: u64,
-    days_remaining: u64,
-    total_tenor_days: u64
-): u64
-```
-
-Calculates the 2% bonus on interest saved through early repayment.
+- **get_rate_for_tenor()**: Returns the rate in basis points for a valid tenor
+- **is_valid_tenor()**: Checks if a tenor is one of the five supported options
+- **calculate_time_weighted_interest()**: Calculates interest for a portion of principal over a time period (used in prefund repayments)
+- **calculate_early_repayment_discount()**: Calculates the 2% bonus on interest saved through early repayment
 
 ### Constants
 
-```move
-// Tenor durations in seconds
-const TENOR_7_DAYS: u64 = 604800;
-const TENOR_14_DAYS: u64 = 1209600;
-const TENOR_30_DAYS: u64 = 2592000;
-const TENOR_60_DAYS: u64 = 5184000;
-const TENOR_90_DAYS: u64 = 7776000;
-
-// Interest rates in basis points
-const RATE_7_DAYS_BPS: u64 = 35;
-const RATE_14_DAYS_BPS: u64 = 60;
-const RATE_30_DAYS_BPS: u64 = 120;
-const RATE_60_DAYS_BPS: u64 = 220;
-const RATE_90_DAYS_BPS: u64 = 320;
-
-// Early repayment incentive
-const EARLY_REPAYMENT_DISCOUNT_BPS: u64 = 200; // 2%
-```
+Tenor durations and rates are hardcoded:
+- 7 days: 604,800 seconds, 35 bps
+- 14 days: 1,209,600 seconds, 60 bps
+- 30 days: 2,592,000 seconds, 120 bps
+- 60 days: 5,184,000 seconds, 220 bps
+- 90 days: 7,776,000 seconds, 320 bps
+- Early repayment discount: 200 bps (2%)
 
 ## Related Documentation
 
-- [Prefund PRT System](/mechanics/prefund-prt): Time-weighted interest in action
-- [Tranches](/mechanics/tranches): How interest is distributed across risk layers
-- [KachFlow Credit Engine](/core/kachflow): Credit system overview
-- [Attestator Operations](/mechanics/attestator-operations): Borrowing and repayment workflow
+- [Prefund PRT System](/prefund-prt): Time-weighted interest in action
+- [Tranches](/tranches): How interest is distributed across risk layers
+- [KachFlow Credit Engine](/kachflow): Credit system overview
+- [Attestator Operations](/attestator-operations): Borrowing and repayment workflow

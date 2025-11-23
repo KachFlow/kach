@@ -231,7 +231,30 @@ public entry fun revoke_attestation<FA>(
 
 ## Drawing Credit
 
-Attestators have two methods to draw credit:
+Attestators have two methods to draw credit, determined by Trust Score:
+
+```mermaid
+graph TD
+    Start[Attestator Needs Liquidity] --> CheckTS{Check Trust Score}
+
+    CheckTS -->|TS < 60| Denied[❌ Access Denied<br/>Build trust score first]
+    CheckTS -->|TS 60-94| Standard[✓ Standard Draw Available]
+    CheckTS -->|TS ≥ 95| Prefund[✓✓ Prefund Draw Available]
+
+    Standard --> S1[1. Create attestation<br/>verifying receivable]
+    S1 --> S2[2. Draw credit<br/>with attestation]
+    S2 --> S3[3. Execute payment]
+    S3 --> S4[4. Collect receivable]
+    S4 --> S5[5. Full repayment]
+
+    Prefund --> P1[1. Draw credit<br/>immediately]
+    P1 --> P2[2. Execute payment]
+    P2 --> P3[3. Collect receivable<br/>partial OK]
+    P3 --> P4[4. Partial repayments<br/>with attestations]
+    P4 --> P5[5. Complete when<br/>fully repaid]
+
+    Denied --> Recovery[Improve via:<br/>- On-time payments<br/>- Time + performance]
+```
 
 ### Method 1: Standard Draw (Trust Score ≥ 60)
 
@@ -255,7 +278,7 @@ Attestators have two methods to draw credit:
 
 **Use Case**: Time-sensitive payments, high-trust Attestators
 
-See [Prefund PRT System](/mechanics/prefund-prt) for complete details.
+See [Prefund PRT System](/prefund-prt) for complete details.
 
 ## Repayment Operations
 
@@ -462,6 +485,6 @@ Attestators earn through:
 
 ## Related Documentation
 
-- [Prefund PRT System](/mechanics/prefund-prt): Advanced credit without upfront attestation
-- [KachFlow Credit Engine](/core/kachflow): Core credit mechanics
-- [Compliance](/governance/compliance): Regulatory requirements
+- [Prefund PRT System](/prefund-prt): Advanced credit without upfront attestation
+- [KachFlow Credit Engine](/kachflow): Core credit mechanics
+- [Compliance](/compliance): Regulatory requirements

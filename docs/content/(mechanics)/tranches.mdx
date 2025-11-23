@@ -29,6 +29,30 @@ Kach addresses this by offering **two [tranches](/glossary#tranche) per pool** (
 
 In a default event where an Attestator fails to repay:
 
+```mermaid
+graph TD
+    A[Default Event: $100K Loss] --> B[Step 1: Protocol Reserve]
+    B -->|Reserve: $50K available| C[Absorbs $50K]
+    C --> D{Remaining Loss: $50K}
+
+    D --> E[Step 2: Junior Tranche First Loss]
+    E -->|Junior Principal: $200K<br/>Max Loss: 80% = $160K| F[Junior Absorbs $50K]
+    F --> G[Junior NAV Impact:<br/>$150K / $200K = 0.75<br/>25% loss]
+
+    D -.->|If loss > $160K| H[Step 3: Senior Tranche]
+    H -.->|Senior Principal: $800K<br/>Max Loss: 20% = $160K| I[Senior Absorbs Remainder]
+```
+
+**Example Scenario: $100K Default on $1M Pool**
+
+- **Gross Loss**: $100,000
+- **Step 1**: Protocol Reserve absorbs $50K (depleted)
+- **Step 2**: Junior tranche absorbs remaining $50K
+  - Junior principal: $200K → Loss: $50K (25% of junior capital)
+  - Junior NAV: 1.0 → 0.75
+- **Step 3**: Senior tranche unaffected (loss absorbed by junior)
+  - Senior NAV: 1.0 (no impact)
+
 1.  The protocol calculates the net realized loss after any recoveries.
 
 2.  Losses are allocated in the following order:
@@ -56,18 +80,33 @@ Numbers below are the current working defaults for testnet and the planned mainn
 | Target utilization band | 60–80% | Keeps headroom for withdrawals and Attestator draws. |
 | Deposit cap (per pool) | $10–25m during alpha | Raised only after clean repayment history and audit sign-off. |
 | Tenor bands | Standard 1–5 days; prefund/extended fixed 7/14/30/60/90 days | Longer tenors gated to top Trust Scores with additional guarantees. |
-| Base rate (senior / junior) | 8% / 16% APR | Applies at 60% utilization; scales with utilization slope. |
-| Utilization slope | +1–2% APR increase per 10% utilization above target | Preserves liquidity buffer while rewarding higher deployment. |
-| Yield multipliers (by tranche) | Senior 0.8×, Junior 1.3× | Applied to the base rate after utilization adjustment. |
+| Capital weighting multipliers | Senior 0.8×, Junior 1.3× | Used for risk-adjusted interest distribution; governance-tunable. |
 | Reserve skim | 5–10% of gross interest | Funds protocol reserves before tranche distribution. |
 | Loss waterfall caps | Junior first-loss up to 80% of its principal, Senior up to 20% | Caps can tighten or loosen per pool. |
 | Concentration limits | Max 25–30% exposure to any single Attestator or corridor | Enforced at underwriting and draw time. |
 
-Calculating yield (simplified):
+Calculating yield distribution:
 
-1. Start with the base rate at the current utilization band.
-2. Apply the tranche multiplier (senior 0.8×, junior 1.3×).
-3. Skim 5–10% of gross interest to reserves.
-4. Allocate the remainder to each tranche pro rata by share count and [NAV](/glossary#nav) index.
+1. Receive interest from Attestator repayments.
+2. Deduct protocol fee (7% of gross interest).
+3. Calculate capital-weighted shares:
+   - Senior weight = `senior_deposits × 0.8`
+   - Junior weight = `junior_deposits × 1.3`
+   - Total weight = senior weight + junior weight
+4. Distribute remaining interest proportionally:
+   - Senior receives: `(interest_after_fee) × (senior_weight / total_weight)`
+   - Junior receives: `(interest_after_fee) × (junior_weight / total_weight)`
+5. Update [NAV](/glossary#nav) for each tranche based on distributed yield.
+
+**Example with $100M pool ($80M Senior, $20M Junior):**
+- Gross interest received: $1,000
+- Protocol fee (7%): $70 → leaves $930
+- Senior weight: $80M × 0.8 = 64M
+- Junior weight: $20M × 1.3 = 26M
+- Total weight: 90M
+- Senior gets: $930 × (64/90) = **$660** → 0.825% yield on $80M
+- Junior gets: $930 × (26/90) = **$270** → 1.35% yield on $20M
+
+**Result:** Junior earns ~1.64× more per dollar (1.35% ÷ 0.825%) to compensate for first-loss risk.
 
 These parameters are encoded on-chain per pool and can be versioned so historical Position NFTs always reference the rule set in effect when they were minted.

@@ -35,6 +35,47 @@ stateDiagram-v2
     Analytics --> Governance: Reports
 ```
 
+## Technical Stack
+
+```mermaid
+graph TB
+    subgraph OffChain["OFF-CHAIN LAYER"]
+        KYB[KYB/AML Providers<br/>Sumsub, Plaid]
+        Risk[Risk Committee<br/>Underwriting, Limits]
+        Analytics[Analytics Dashboard<br/>ClickHouse, Monitoring]
+    end
+
+    subgraph OnChain["ON-CHAIN LAYER (Aptos / Move)"]
+        subgraph PoolLayer["Pool Module"]
+            Pool[Pool Contract<br/>USDC/USDT/Asset accounting<br/>Deposit/Withdraw logic]
+        end
+
+        subgraph TokenLayer["Token Modules"]
+            PosNFT[Position NFT<br/>Mint/Burn<br/>Split/Merge]
+            PRT[PRT Registry<br/>Issue/Burn<br/>Interest calc]
+        end
+
+        subgraph CreditLayer["Credit Engine"]
+            Credit[Credit Engine<br/>Trust Score tracking<br/>Draw limits<br/>Rate schedules]
+        end
+
+        subgraph EventLayer["Event & Accounting"]
+            Events[Event Emissions<br/>Deposits, Yields,<br/>Withdrawals, Defaults]
+        end
+    end
+
+    KYB -->|Attestor verification| Pool
+    Risk -->|Set parameters| Pool
+    Pool <-->|LP positions| PosNFT
+    Pool <-->|Attestor draws| PRT
+    PRT <-->|Repayment logic| Credit
+    Pool --> Events
+    PosNFT --> Events
+    PRT --> Events
+    Events -->|Stream to| Analytics
+    Analytics -->|Reports to| Risk
+```
+
 ## On-chain components
 
 - **Generic liquidity pool [contract](https://github.com/KachFlow/kach)**: One Move module manages every supported stablecoin. Governance registers each asset with its own [utilization](/glossary#utilization) caps, [tranche](/glossary#tranche) buffers, and [NAV](/glossary#nav) math. LPs see distinct pools (USDC, USDT, etc.) even though the code is shared.

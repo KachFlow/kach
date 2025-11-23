@@ -7,6 +7,27 @@ description: "Hybrid amount- and count-weighted scoring with decay, severity mul
 
 Every Attestator (borrower) has a **Trust Score** that governs credit access and draw capabilities. The score blends **amount-weighted behavior**, **count-based reliability**, **recency decay**, and **anti-gaming limits** so reputation scales with real volume, not just payment counts.
 
+```mermaid
+graph LR
+    A[New Attestator<br/>Score: 70] --> B{Repayment Behavior}
+
+    B -->|On-time<br/>+1 per loan| C[Building Trust<br/>Score: 75-85]
+    B -->|Late<br/>-5 per loan| D[Degrading<br/>Score: 55-65]
+    B -->|Default<br/>-20 per loan| E[Suspended<br/>Score: <60]
+
+    C -->|Consistent<br/>on-time| F[High Trust<br/>Score: 90-95]
+    F -->|Sustained<br/>excellence| G[Prefund Access<br/>Score: 95+]
+
+    D -->|Recovery<br/>on-time payments| C
+    E -->|Not Eligible| H[Credit Suspended<br/>Must rebuild]
+    H -->|Time + Performance| D
+```
+
+**Key Thresholds**:
+- **≥ 95**: Prefund draw access (no upfront attestation required)
+- **≥ 60**: Standard draw access (attestation required)
+- **< 60**: Credit suspended until recovery
+
 ### Data Tracked
 - `good_volume`: Sum of amounts repaid on time (decayed over time)
 - `late_volume`: Sum of amounts repaid late (decayed, severity-weighted)

@@ -45,6 +45,30 @@ With **early repayment incentives** and the **prefund system**, actual cycles ca
 - Higher utilization (80-85%) from capital availability
 - Resulting APY: **20-25%** before protocol fees
 
+```mermaid
+graph TD
+    subgraph Traditional["Traditional 30-Day Hold"]
+        A1[Annual Cycles: 12] --> B1[Per Cycle: $960]
+        B1 --> C1[Annual Yield: $11,520<br/>1.15% APY]
+    end
+
+    subgraph Kach7["Kach 7-Day Cycles"]
+        A2[Annual Cycles: 52] --> B2[Per Cycle: $297]
+        B2 --> C2[Annual Yield: $15,444<br/>1.54% APY<br/>+33% vs traditional]
+    end
+
+    subgraph Kach5["Kach 5-Day Optimal"]
+        A3[Annual Cycles: 73] --> B3[Per Cycle: $255]
+        B3 --> C3[Annual Yield: $18,615<br/>1.86% APY<br/>+61% vs traditional]
+    end
+
+    D[Same $1M Pool<br/>80% Utilization] --> Traditional
+    D --> Kach7
+    D --> Kach5
+```
+
+**Why Velocity Matters**: The same capital deployed more frequently generates dramatically higher returns. Early repayment incentives and prefund mechanics enable 50-70+ cycles per year vs. traditional 12-cycle models.
+
 For longer tenors, example **30 days at 120 bps**:
 
 - $$\frac{365}{30} \approx 12.2$$ cycles per year.
@@ -62,7 +86,7 @@ A realistic target band for depositors, under conservative assumptions, can be f
 
 ## Trust Score and Limits
 
-Every Attestator (borrower) has a **Trust Score** that governs credit access and draw capabilities. The full hybrid model (amount- and count-weighted scoring, severity multipliers, recency decay, confidence scaling, anti-gaming sizing, and concave per-loan weighting) is documented in [Mechanics → Trust Score](/mechanics/trust-score).
+Every Attestator (borrower) has a **Trust Score** that governs credit access and draw capabilities. The full hybrid model (amount- and count-weighted scoring, severity multipliers, recency decay, confidence scaling, anti-gaming sizing, and concave per-loan weighting) is documented in [Mechanics → Trust Score](/trust-score).
 
 Thresholds remain:
 - **≥ 60**: Eligible for standard PRT draws (with attestation)

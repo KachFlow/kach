@@ -253,18 +253,13 @@ These values are hardcoded in contracts and cannot be changed without contract u
 
 ## Parameter Update Events
 
-All parameter changes emit structured events:
-
-```move
-struct ParameterUpdated {
-    parameter_name: String,
-    old_value: u64,
-    new_value: u64,
-    updated_by: address,
-    reason: String,
-    timestamp: u64
-}
-```
+All parameter changes emit structured events containing:
+- parameter_name
+- old_value
+- new_value
+- updated_by
+- reason
+- timestamp
 
 ### Recent Changes Log
 
@@ -301,7 +296,7 @@ Example format:
 
 ## Related Documentation
 
-- [Governance](/governance/risk): How governance decisions are made
-- [Interest Rate Model](/mechanics/interest-rates): Detailed rate mechanics
-- [Trust Score System](/core/kachflow#trust-score-and-limits): Scoring logic
-- [Tranches](/mechanics/tranches): Risk layer parameters
+- [Governance](/risk): How governance decisions are made
+- [Interest Rate Model](/interest-rates): Detailed rate mechanics
+- [Trust Score System](/kachflow#trust-score-and-limits): Scoring logic
+- [Tranches](/tranches): Risk layer parameters
