@@ -3,6 +3,7 @@
   "pages": [
     "risk",
     "compliance",
-    "token"
+    "token",
+    "parameters"
   ]
 }

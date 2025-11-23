@@ -19,9 +19,6 @@ Regulated settlement provider that receives fiat from clients, requests Kach cre
 ### Bayta
 Operator of the Kach protocol during early phases; manages underwriting, risk, and governance bootstrapping until community control expands.
 
-### Borrower (legacy)
-Legacy term for entities that drew credit directly; now replaced by Attestators who hold all credit rights.
-
 ## C
 
 ### CFT
@@ -55,6 +52,9 @@ Money Services Business; a US designation for regulated companies that transmit 
 
 ## N
 
+### NAV (Net Asset Value)
+Per-share value of a pool after accounting for accrued yield and realized losses. Expressed as a multiplier (scaled by 1e18) applied to each tranche’s shares. Kach tracks NAV separately per tranche; Position NFTs record the NAV index at deposit so redemptions reflect the performance earned while the NFT was held.
+
 ### Nostro account
 “Our money with you”; a bank account held by a financial institution in a foreign bank, usually denominated in that bank’s local currency.
 
@@ -72,10 +72,10 @@ Payment Service Provider; licensed platform that processes payments on behalf of
 ## T
 
 ### Tranche
-Risk slice within a pool (senior, mezzanine, junior) that dictates yield, loss absorption order, and lock-up expectations.
+Risk slice within a pool (senior, junior) that dictates yield, loss absorption order, and lock-up expectations.
 
 ### Trust Score
-Dynamic score assigned to each Attestator based on amount- and count-weighted repayment performance with severity multipliers, recency decay, and a history-based confidence factor; governs credit limits and pricing.
+Dynamic score assigned to each Attestator using a hybrid of amount-weighted and count-based performance with severity multipliers (late vs default), recency decay, per-loan concave weighting, and a confidence factor that grows with history depth; also gates maximum loan size via an anti-gaming rule.
 
 ## U
 

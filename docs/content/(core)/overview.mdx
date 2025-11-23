@@ -13,14 +13,14 @@ At a glance:
 - **Attestators** are vetted fintechs, remittance providers, [PSPs](/glossary#psp), and FX brokers who ingest client fiat, draw credit in stablecoins, run each payout, and repay within days.
 - **[Bayta Co.](/glossary#bayta)** operates underwriting, risk, and governance bootstrapping until the system meets decentralization milestones.
 
-Rather than parking cash in dozens of nostro accounts, Attestators draw just-in-time liquidity for 1–5 day cycles, repay once fiat lands, and immediately recycle their limit. Clients stay off-chain and regulated relationships stay intact, but the core accounting is visible to anyone.
+Rather than parking cash in dozens of nostro accounts, Attestators draw just-in-time liquidity for **1–5 day** cycles (prefund/extended draws use fixed 7/14/30/60/90-day tenors), repay once fiat lands, and immediately recycle their limit. Clients stay off-chain and regulated relationships stay intact, but the core accounting is visible to anyone.
 
 ## Design principles
 
 - **Open liquidity, permissioned usage**: Deposits are public; borrowing requires licensing, [KYB](/glossary#kyb), and approval.
 - **Short-tenor, high-velocity credit**: Standard cycles last a few days, with longer tenors granted only to top-performing Attestators.
 - **On-chain transparency, off-chain diligence**: Credit files, [KYB](/glossary#kyb), and attestations live within controlled systems, while draws, repayments, and [utilization](/glossary#utilization) stay on-chain for easy auditing.
-- **Chain-native settlement**: All pool logic, NAV tracking, and receivable accounting live on Aptos, which already processes multi-billion-dollar stablecoin flows with low fees and sub-second finality.<a href="/references#ref-3">[3]</a><a href="/references#ref-4">[4]</a><a href="/references#ref-5">[5]</a>
+- **Chain-native settlement**: All pool logic, [NAV](/glossary#nav) tracking, and receivable accounting live on Aptos, which already processes multi-billion-dollar stablecoin flows with low fees and sub-second finality.<a href="/references#ref-3">[3]</a><a href="/references#ref-4">[4]</a><a href="/references#ref-5">[5]</a>
 - **Progressive decentralization**: Governance starts with [Bayta](/glossary#bayta)-held committees and migrates to token-driven processes once operating thresholds are hit.
 
 ## Protocol mechanics
@@ -28,13 +28,13 @@ Rather than parking cash in dozens of nostro accounts, Attestators draw just-in-
 ### Liquidity pools
 
 1. Each supported stablecoin runs through its own pool configuration (for example Kach Pool (USDC)). Governance sets [tranche](/glossary#tranche) mixes, lock-ups, and [utilization](/glossary#utilization) targets per pool.
-2. Deposits mint an NFT **Position Object** instead of fungible [tranche](/glossary#tranche) tokens. Every NFT stores the stablecoin, [tranche](/glossary#tranche), share count, lock-up, unlock timestamp, creation timestamp, and NAV index.
+2. Deposits mint an NFT **Position Object** instead of fungible [tranche](/glossary#tranche) tokens. Every NFT stores the stablecoin, [tranche](/glossary#tranche), share count, lock-up, unlock timestamp, creation timestamp, and [NAV](/glossary#nav) index.
 3. Pools emit events for every deposit, NFT split/merge, yield accrual, withdrawal, and realized loss so ledgers and analytics pipelines can mirror the chain exactly.
 4. A protocol reserve, funded by a share of Attestator interest, adds protection above junior capital and covers operating costs.
 
 [Position NFTs](/glossary#position-nft) are the only representation of depositor claims. Holders can transfer them, split them for partial exits, or merge similar positions, but lock-ups and timestamps always travel with the object. Withdrawals burn the NFT and release principal plus accrued yield to whoever currently controls it, not the original depositor.
 
-Even though the pool [contract](https://github.com/KachFlow/kach) is generic, accounting stays asset-aware. Each NFT references its stablecoin, NAV curves run independently per asset, and loss waterfalls respect that metadata.
+Even though the pool [contract](https://github.com/KachFlow/kach) is generic, accounting stays asset-aware. Each NFT references its stablecoin, [NAV](/glossary#nav) curves run independently per asset, and loss waterfalls respect that metadata.
 
 ### Credit underwriting and limits
 
@@ -51,13 +51,13 @@ Draw permissions, limit records, and [KYB](/glossary#kyb) attestations stay insi
 
 1. Every draw mints a non-transferable PRT held by the pool [contract](https://github.com/KachFlow/kach).
 2. Each PRT records principal, rate, tenor, creation and maturity timestamps, the Attestator ID, a Trust Score snapshot, the attestation payload hash, and status (open, repaid, defaulted).
-3. NAV calculations, [utilization](/glossary#utilization) metrics, and [tranche](/glossary#tranche)-level yield accrual reference outstanding PRTs. When a repayment lands, the matching PRT burns and its realized yield is pushed to [tranches](/glossary#tranche), reserves, and penalties where applicable.
+3. [NAV](/glossary#nav) calculations, [utilization](/glossary#utilization) metrics, and [tranche](/glossary#tranche)-level yield accrual reference outstanding PRTs. When a repayment lands, the matching PRT burns and its realized yield is pushed to [tranches](/glossary#tranche), reserves, and penalties where applicable.
 
 ### Settlement and reconciliation
 
 1. Attestators tag each draw with contextual metadata (for example supplier IDs) and upload banking attestations via secure APIs; hashed proofs land on Aptos without exposing client data.
 2. Once repayments arrive, [smart contracts](https://github.com/KachFlow/kach) calculate interest, allocate it across [tranches](/glossary#tranche) and reserves, and reopen headroom immediately so capital can be redeployed the same day.
-3. If a payment defaults, Kach enforces the Attestator's legal agreements and then waterfalls any remaining loss through junior, mezzanine, and senior [tranches](/glossary#tranche) exactly as described in Tranches and Risk Layers.
+3. If a payment defaults, Kach enforces the Attestator's legal agreements and then waterfalls any remaining loss through junior then senior [tranches](/glossary#tranche) exactly as described in Tranches and Risk Layers.
 
 ## Why Attestators matter
 

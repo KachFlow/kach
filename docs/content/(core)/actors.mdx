@@ -34,13 +34,12 @@ Yield comes from:
 
 | Tranche | Commitment style | Illustrative APR\* | Loss absorption / notes |
 | --- | --- | --- | --- |
-| Senior | 12-24 month rolling commitments with 90-day notice rights | 8% | Largest capital base, last to take losses; withdrawals prioritized once buffers are met. |
-| Mezzanine | 6-12 month hard lock with optional step-ups | 12% | Middle cushion that absorbs losses after junior capital while earning higher share of upside. |
-| Junior | 3-6 month evergreen but callable only at term end | 18% | First-loss capital; highest yield but exposed to immediate haircuts during defaults. |
+| Senior | 6–18 month rolling commitments with 60–90 day notice | 8–10% | Last-loss capital; buffered by junior first-loss. Lower, steadier yield. |
+| Junior | 3–6 month evergreen, callable at term end | 16–20% | First-loss capital; highest yield, takes initial defaults/timing shocks. |
 
 \*Actual parameters are set by governance per pool and adjust with [utilization](/glossary#utilization), realized loss data, and market demand.
 
-Each deposit mints a **[Position NFT](/glossary#position-nft)** that is the depositor's only claim on a pool. The NFT metadata tracks the stablecoin (USDC in most illustrations), [tranche](/glossary#tranche) selection, number of pool shares, lock-up duration, unlock timestamp, creation timestamp, and the current NAV/yield multiplier. Those fields drive yield, notice rules, and loss absorption. [Position NFTs](/glossary#position-nft) are transferable, so secondary-market buyers inherit the same lock-up, [tranche](/glossary#tranche) exposure, and redemption rights. Partial exits burn the original NFT and mint two with updated pro-rata attributes, while similar positions can merge. Unlocking requires burning the NFT; redemption proceeds always flow to the **current** NFT holder, not the original depositor.
+Each deposit mints a **[Position NFT](/glossary#position-nft)** that is the depositor's only claim on a pool. The NFT metadata tracks the stablecoin (USDC in most illustrations), [tranche](/glossary#tranche) selection, number of pool shares, lock-up duration, unlock timestamp, creation timestamp, and the current [NAV](/glossary#nav)/yield multiplier. Those fields drive yield, notice rules, and loss absorption. [Position NFTs](/glossary#position-nft) are transferable, so secondary-market buyers inherit the same lock-up, [tranche](/glossary#tranche) exposure, and redemption rights. Partial exits burn the original NFT and mint two with updated pro-rata attributes, while similar positions can merge. Unlocking requires burning the NFT; redemption proceeds always flow to the **current** NFT holder, not the original depositor.
 
 ## Clients (Fiat Originators)
 

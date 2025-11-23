@@ -20,9 +20,9 @@ flowchart LR
 
 1.  **Deposit**
 
-    -   A depositor selects the stablecoin they want to allocate (USDC at launch, more via governance) along with a [tranche](/glossary#tranche) (senior, mezzanine, junior) and a lock-up (flexible, 3, 6, 12, 24 months).
+    -   A depositor selects the stablecoin they want to allocate (USDC at launch, more via governance) along with a [tranche](/glossary#tranche) (senior or junior) and a lock-up (flexible, 3, 6, 12, 24 months).
 
-    -   The depositor sends the stablecoin to the pool. The [contract](https://github.com/KachFlow/kach) mints a [Position NFT](/glossary#position-nft) with the stablecoin id, [tranche](/glossary#tranche), shares, lock-up, NAV index, and timestamps.
+    -   The depositor sends the stablecoin to the pool. The [contract](https://github.com/KachFlow/kach) mints a [Position NFT](/glossary#position-nft) with the stablecoin id, [tranche](/glossary#tranche), shares, lock-up, [NAV](/glossary#nav) index, and timestamps.
 
     -   Deposit, NFT mint, and any split/merge events are emitted so off-chain ledgers can mirror activity exactly.
 
@@ -40,7 +40,7 @@ flowchart LR
 
 4.  **Repayment**
 
-    -   Within 1-5 days (or the agreed longer term), the Attestator repays principal plus interest in the same stablecoin. The PRT is burned, and repayment events record realized yield or penalties.
+    -   Within the selected tenor (standard 1–5 days; prefund/extended options fixed at 7/14/30/60/90 days), the Attestator repays principal plus interest in the same stablecoin. The PRT is burned, and repayment events record realized yield or penalties.
 
     -   Late repayments impact Trust Score and may incur penalties that are stored against the PRT before it is closed out.
 
@@ -54,7 +54,7 @@ flowchart LR
 
         -   Any incentive allocations (points, future KACH rewards).
 
-    -   NAV and yield distribution reference NFT metadata so each position accrues exactly what its [tranche](/glossary#tranche), lock-up, and NAV index dictate. Repaid principal becomes available for the next credit cycle, subject to [tranche](/glossary#tranche) and lock-up constraints.
+    -   [NAV](/glossary#nav) and yield distribution reference NFT metadata so each position accrues exactly what its [tranche](/glossary#tranche), lock-up, and [NAV](/glossary#nav) index dictate. Repaid principal becomes available for the next credit cycle, subject to [tranche](/glossary#tranche) and lock-up constraints.
 
 6.  **Withdrawal**
 
@@ -76,4 +76,4 @@ Robust event logs tie each of these steps together. Indexers replay deposit, NFT
 
 -   Real-time dashboards sourced from on-chain events publish [utilization](/glossary#utilization), Attestator concentration, and realized loss data per pool so depositors can independently monitor the credit book.
 
--   Periodic attestations (auditor-reviewed when feasible) reconcile NAV, cash balances, and outstanding PRTs, ensuring that passive LPs are never "flying blind" even though underwriting decisions are centralized.
+-   Periodic attestations (auditor-reviewed when feasible) reconcile [NAV](/glossary#nav), cash balances, and outstanding PRTs, ensuring that passive LPs are never "flying blind" even though underwriting decisions are centralized.

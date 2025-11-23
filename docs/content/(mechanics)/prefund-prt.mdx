@@ -1,0 +1,258 @@
+---
+title: "Prefund PRT System"
+description: "Advanced credit system allowing draws without upfront attestation for highly trusted borrowers."
+---
+
+## Overview
+
+The **Prefund PRT** system is an advanced credit mechanism that allows highly trusted borrowers (Attestators) to draw credit **without upfront attestation**, enabling faster access to liquidity for time-sensitive payment flows. This is a significant departure from the standard PRT flow and requires exceptional trust scores.
+
+## Standard vs. Prefund Flow
+
+### Standard PRT Flow
+1. Attestator verifies off-chain receivable
+2. Creates on-chain Attestation object
+3. Draws credit using the attestation
+4. Single repayment required
+5. PRT burned on full repayment
+
+**Requirement**: Trust Score ≥ 60
+
+### Prefund PRT Flow
+1. Attestator draws credit **immediately** (no upfront attestation)
+2. Executes real-world payment
+3. Makes **partial repayments** as receivables are collected
+4. Provides attestation **with each repayment**
+5. PRT burned when fully repaid
+
+**Requirement**: Trust Score ≥ 95
+
+## Trust Score Threshold
+
+The prefund system requires a trust score of **95 or higher** (out of 100). This threshold ensures only borrowers with:
+- Proven track record of on-time payments
+- Substantial payment history
+- Minimal late or defaulted loans
+- Strong reputation with the protocol
+
+Achieving a 95 trust score typically requires:
+- Multiple successful repayment cycles
+- Zero recent defaults
+- Minimal late payments
+- Consistent performance over time
+
+## Partial Repayments
+
+Unlike standard PRTs that require single full repayment, prefund PRTs support **multiple partial repayments**:
+
+```move
+// Example: $10,000 prefund loan
+Day 0:   Draw $10,000 USDC (no attestation required)
+Day 10:  Repay $5,000 + attestation for first receivable
+Day 20:  Repay $3,000 + attestation for second receivable
+Day 28:  Repay $2,000 + interest + attestation for final receivable
+```
+
+Each repayment must include:
+- Amount being repaid (can be partial)
+- Attestation proving the corresponding receivable was collected off-chain
+- Proof hash linking to real-world settlement
+
+## Time-Weighted Interest
+
+Prefund PRTs use **time-weighted interest calculation** that only charges interest on outstanding principal for the actual days outstanding:
+
+### Formula
+
+```
+Interest = Outstanding Principal × Rate × (Days Elapsed / Total Tenor Days)
+```
+
+### Example Calculation
+
+**Loan Details**:
+- Principal: $10,000 USDC
+- Tenor: 30 days
+- Rate: 120 bps (1.20%)
+- Expected interest at full term: $120 USDC
+
+**Repayment Schedule**:
+
+**Day 0-10** (10 days elapsed):
+- Outstanding: $10,000
+- Interest accrued: $10,000 × 0.012 × (10/30) = **$40**
+
+**Day 10 Repayment**: Pay $5,000 principal + $40 interest
+
+**Day 10-20** (10 more days):
+- Outstanding: $5,000 (remaining)
+- Interest accrued: $5,000 × 0.012 × (10/30) = **$20**
+
+**Day 20 Repayment**: Pay $3,000 principal + $20 interest
+
+**Day 20-28** (8 more days):
+- Outstanding: $2,000 (remaining)
+- Interest accrued: $2,000 × 0.012 × (8/30) = **$6.40**
+
+**Day 28 Final Repayment**: Pay $2,000 principal + $6.40 interest
+
+**Total Interest Paid**: $40 + $20 + $6.40 = **$66.40**
+
+This is **$53.60 less** than if the full $10,000 had been outstanding for 30 days, rewarding the borrower for early partial repayments.
+
+## Early Repayment Bonus
+
+To further incentivize fast repayment, the protocol offers a **200 basis point (2%) bonus** on interest saved through early repayment:
+
+### Calculation
+
+```
+Saved Interest = (Full Term Interest) - (Actual Interest Paid)
+Bonus = Saved Interest × 0.02
+Net Interest = Actual Interest - Bonus
+```
+
+### Example with Bonus
+
+Using the example above:
+- Full term interest: $120
+- Actual interest before bonus: $66.40
+- Interest saved: $120 - $66.40 = $53.60
+- Early repayment bonus: $53.60 × 0.02 = **$1.07**
+- **Net interest charged**: $66.40 - $1.07 = **$65.33**
+
+The borrower saves an additional $1.07 through the early repayment incentive mechanism.
+
+## Benefits of Prefund System
+
+### For Borrowers (Attestators)
+- **Faster liquidity access**: No waiting for attestation creation
+- **Flexible repayment**: Match repayments to actual receivable collection
+- **Lower interest**: Pay only for funds actually used and time outstanding
+- **Early repayment rewards**: 2% bonus on interest saved
+- **Operational efficiency**: Better cash flow management
+
+### For the Protocol
+- **Risk mitigation**: Only available to proven performers (TS ≥ 95)
+- **Capital efficiency**: Faster repayment = higher velocity = more yield
+- **Stronger relationships**: Rewards top-tier Attestators with better terms
+- **Alignment**: Incentivizes behavior that benefits both parties
+
+### For Liquidity Providers
+- **Higher returns**: Increased capital velocity from faster repayments
+- **Lower risk**: Prefund access only granted to most reliable borrowers
+- **Better utilization**: Reduced idle time between cycles
+
+## Technical Implementation
+
+The prefund system is implemented in the `prt.move` and `credit_engine.move` modules:
+
+### Key Functions
+
+**Drawing Prefund Credit** (`credit_engine.move`):
+```move
+public entry fun draw_credit_prefund<FA>(
+    borrower: &signer,
+    pool_addr: address,
+    amount: u64,
+    tenor_seconds: u64,
+    metadata_uri: String
+)
+```
+
+Requirements checked:
+- Trust score ≥ 95
+- Credit line has sufficient headroom
+- Pool has sufficient liquidity
+- Pool not paused
+
+**Partial Repayment** (`prt.move`):
+```move
+public entry fun repay_prefund_prt_partial<FA>(
+    borrower: &signer,
+    prt_addr: address,
+    amount: u64,
+    proof_hash: vector<u8>,
+    attestator_addr: address
+)
+```
+
+Requirements:
+- Amount ≤ outstanding principal
+- Attestation provided for this repayment
+- Calculates time-weighted interest
+- Updates PRT status
+- Marks PRT as REPAID when fully paid
+
+## Risk Controls
+
+Despite the flexibility, the prefund system maintains strict risk controls:
+
+1. **High Trust Score Requirement**: Only borrowers with TS ≥ 95 can access
+2. **Attestation Per Repayment**: Each partial payment requires proof of receivable collection
+3. **Credit Line Limits**: Still subject to overall credit line max outstanding
+4. **Status Tracking**: PRT status (OPEN, REPAID, LATE, DEFAULTED) continuously monitored
+5. **Trust Score Impact**: Late or defaulted prefund loans have severe scoring penalties
+
+## Attestation Requirements
+
+While prefund draws don't require upfront attestation, **each repayment must include attestation**:
+
+- Proof hash must reference real-world settlement
+- Attestator must verify the corresponding receivable was collected
+- Amount attested must match or exceed repayment amount
+- Missing attestations block further draws
+
+This ensures that while speed is prioritized, accountability is maintained throughout the loan lifecycle.
+
+## When to Use Prefund
+
+**Ideal Use Cases**:
+- Time-sensitive cross-border payments with tight settlement windows
+- High-frequency corridors with proven performance
+- Situations where receivables are collected in stages
+- Attestators with strong operational track record
+
+**Not Recommended For**:
+- New Attestators (need to build trust score first)
+- Unpredictable or volatile corridors
+- Single large receivables (standard PRT more efficient)
+- Borrowers with recent late payments
+
+## Monitoring and Compliance
+
+The protocol emits detailed events for prefund operations:
+
+```move
+struct PrefundDrawn {
+    prt_address: address,
+    borrower: address,
+    amount: u64,
+    tenor: u64,
+    trust_score: u64
+}
+
+struct PartialRepayment {
+    prt_address: address,
+    amount_repaid: u64,
+    interest_paid: u64,
+    remaining_principal: u64,
+    proof_hash: vector<u8>
+}
+```
+
+Off-chain monitoring systems track:
+- Prefund utilization rates
+- Partial repayment patterns
+- Attestation compliance
+- Trust score trajectories
+- Default rates for prefund vs. standard loans
+
+## Future Enhancements
+
+Potential improvements under consideration:
+- Dynamic prefund thresholds based on corridor risk
+- Graduated prefund limits (higher TS = higher prefund limit)
+- Automated attestation aggregation for batch repayments
+- Integration with real-time settlement APIs
+- Zero-knowledge proofs for private attestations

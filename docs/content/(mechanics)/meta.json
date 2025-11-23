@@ -3,6 +3,11 @@
   "pages": [
     "architecture",
     "tranches",
-    "aptos"
+    "aptos",
+    "prefund-prt",
+    "attestator-operations",
+    "position-nft",
+    "interest-rates",
+    "trust-score"
   ]
 }

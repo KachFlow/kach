@@ -18,7 +18,7 @@ Attestators sign enforceable agreements, provide data access, and sit behind [Ba
 ## Security posture and assurance
 
 - **Audits**: Third-party Move audits are required pre-mainnet and after material upgrades. Known issues and remediation timelines are published alongside governance minutes.
-- **Testing and invariants**: Unit/property tests cover deposit/withdrawals, PRT lifecycle, tranche accounting, utilization throttles, and pause logic. Critical invariants (e.g., no negative NAV, conservation of principal, monotonic unlock timestamps) are codified in tests plus checklist items for reviewers.
+- **Testing and invariants**: Unit/property tests cover deposit/withdrawals, PRT lifecycle, tranche accounting, utilization throttles, and pause logic. Critical invariants (e.g., no negative [NAV](/glossary#nav), conservation of principal, monotonic unlock timestamps) are codified in tests plus checklist items for reviewers.
 - **Formal verification track**: Modules that touch balances (pool, NFT, PRT) target Move Prover specs for access control and asset movement paths. Coverage reports accompany release notes.
 - **Threat model**: Focus areas include Attestator misbehavior, bridge risk for cross-chain intake, oracle/input tampering on attestation payloads, admin key compromise, and stablecoin contract freezes.
 - **Dependency hygiene**: Off-chain services (attestation verifier, analytics pipelines) run with scoped access; artifacts are hashed and referenced on-chain where possible. Key management uses multisig and hardware enclaves for signing.
