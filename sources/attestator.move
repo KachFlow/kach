@@ -635,11 +635,9 @@ module kach::attestator {
 
         // Update borrower trust score
         // If attestator settles within grace period, borrower gets credit for on-time payment
-        if (is_on_time_for_borrower) {
-            trust_score::increment_on_time_payments(borrower);
-        } else {
-            trust_score::increment_late_payments(borrower);
-        };
+        let status = if (is_on_time_for_borrower) { 0u8 }
+        else { 1u8 }; // STATUS_ON_TIME or STATUS_LATE
+        trust_score::update_trust_score(borrower, principal, status, governance_addr);
 
         // Get pool address from PRT
         let pool_address = prt::get_pool_address<FA>(prt);

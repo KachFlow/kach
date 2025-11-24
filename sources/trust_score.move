@@ -256,8 +256,10 @@ module kach::trust_score {
 
         let volume_denominator = trust_score.good_volume + epsilon;
         let volume_penalty = (weighted_bad_volume * 100 * SCALE) / volume_denominator;
-        let volume_score_raw = if (base_score as u128) * SCALE > volume_penalty {
-            ((base_score as u128) * SCALE - volume_penalty)
+
+        let base_score_scaled = (base_score as u128) * SCALE;
+        let volume_score_raw = if (base_score_scaled > volume_penalty) {
+            base_score_scaled - volume_penalty
         } else {
             0u128
         };
@@ -398,7 +400,20 @@ module kach::trust_score {
         let trust_score = borrow_global<TrustScore>(borrower_address);
 
         let current_score = calculate_trust_score_internal(trust_score, governance_address);
-        let max_loan = get_max_loan_amount(borrower_address, governance_address);
+
+        // Calculate max loan inline to avoid double borrow
+        let max_loan = if (trust_score.total_loans < BOOTSTRAP_LOAN_COUNT) {
+            trust_score.approved_credit_limit
+        } else {
+            let k_bps = governance::get_trust_anti_gaming_k_bps(governance_address);
+            let earned_capacity = (trust_score.good_volume * (k_bps as u128)) / (10000 * SCALE);
+            let earned_capacity_u64 = (earned_capacity as u64);
+            if (trust_score.approved_credit_limit < earned_capacity_u64) {
+                trust_score.approved_credit_limit
+            } else {
+                earned_capacity_u64
+            }
+        };
 
         (
             current_score,

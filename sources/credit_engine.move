@@ -163,7 +163,7 @@ module kach::credit_engine {
         );
 
         // Initialize trust score for borrower
-        trust_score::initialize_trust_score(admin, borrower_address);
+        trust_score::initialize_trust_score(admin, borrower_address, max_outstanding);
 
         let credit_line = CreditLine<FA> {
             borrower_address,
@@ -203,8 +203,9 @@ module kach::credit_engine {
     /// Creates a PRT and transfers fungible assets to borrower
     public entry fun draw_credit<FA>(
         borrower: &signer,
-        attestation: Object<Attestation>, // NEW: Required attestation
+        attestation: Object<Attestation>,
         tenor_seconds: u64,
+        governance_address: address,
         fa_metadata: Object<Metadata>
     ) acquires CreditLine {
         let borrower_addr = signer::address_of(borrower);
@@ -237,7 +238,8 @@ module kach::credit_engine {
         assert!(attested_borrower == borrower_addr, E_NOT_AUTHORIZED);
 
         // Get trust score
-        let trust_score_value = trust_score::get_trust_score(borrower_addr);
+        let trust_score_value =
+            trust_score::get_trust_score(borrower_addr, governance_address);
         assert!(trust_score_value >= MIN_TRUST_SCORE_TO_DRAW, E_TRUST_SCORE_TOO_LOW);
 
         // Check limit (use attested amount)
@@ -258,7 +260,8 @@ module kach::credit_engine {
 
         // Validate tenor is within 1-5 day range for standard draws per documentation
         assert!(
-            actual_tenor >= MIN_STANDARD_TENOR_SECONDS && actual_tenor <= MAX_STANDARD_TENOR_SECONDS,
+            actual_tenor >= MIN_STANDARD_TENOR_SECONDS
+                && actual_tenor <= MAX_STANDARD_TENOR_SECONDS,
             E_NOT_AUTHORIZED
         );
 
@@ -316,6 +319,7 @@ module kach::credit_engine {
         borrower: &signer,
         amount: u64,
         tenor_seconds: u64, // Must be one of: 7, 14, 30, 60, 90 days
+        governance_address: address,
         fa_metadata: Object<Metadata>
     ) acquires CreditLine {
         let borrower_addr = signer::address_of(borrower);
@@ -331,7 +335,8 @@ module kach::credit_engine {
         assert!(credit_line.is_active, E_CREDIT_LINE_INACTIVE);
 
         // STRICT trust score check for prefund (>= 95)
-        let trust_score_value = trust_score::get_trust_score(borrower_addr);
+        let trust_score_value =
+            trust_score::get_trust_score(borrower_addr, governance_address);
         assert!(trust_score_value >= MIN_TRUST_SCORE_FOR_PREFUND, E_TRUST_SCORE_TOO_LOW);
 
         // Validate tenor is one of the allowed values
@@ -368,16 +373,17 @@ module kach::credit_engine {
         // Mint prefund PRT
         // Note: In production, get actual pool signer instead of using borrower
         let metadata_uri = std::string::utf8(b""); // Empty metadata for now
-        let _prt_obj = prt::mint_prefund_prt<FA>(
-            borrower, // Should be pool signer in production
-            borrower_addr,
-            amount,
-            interest_rate,
-            tenor_seconds,
-            trust_score_value,
-            metadata_uri,
-            credit_line.pool_address
-        );
+        let _prt_obj =
+            prt::mint_prefund_prt<FA>(
+                borrower, // Should be pool signer in production
+                borrower_addr,
+                amount,
+                interest_rate,
+                tenor_seconds,
+                trust_score_value,
+                metadata_uri,
+                credit_line.pool_address
+            );
 
         // Transfer fungible assets from pool to borrower
         pool::transfer_from_pool<FA>(
@@ -408,6 +414,7 @@ module kach::credit_engine {
         prt: Object<prt::PRT<FA>>,
         attestation: Object<Attestation>, // Proof of receivable collection
         repayment_amount: u64,
+        governance_address: address,
         fa_metadata: Object<Metadata>
     ) acquires CreditLine {
         let borrower_addr = signer::address_of(borrower);
@@ -457,13 +464,15 @@ module kach::credit_engine {
             prt::get_prt_info<FA>(prt);
 
         // Simple interest calculation (will be replaced with actual PRT module call)
-        let interest_paid = if (prt_status == 0) { // STATUS_OPEN
-            ((prt_principal as u128) * (interest_rate as u128) / 10000 as u64)
-        } else { 0u64 };
+        let interest_paid =
+            if (prt_status == 0) { // STATUS_OPEN
+                ((prt_principal as u128) * (interest_rate as u128) / 10000 as u64)
+            } else { 0u64 };
         let _early_discount = 0u64;
-        let new_outstanding = if (prt_principal > principal_paid) {
-            prt_principal - principal_paid
-        } else { 0u64 };
+        let new_outstanding =
+            if (prt_principal > principal_paid) {
+                prt_principal - principal_paid
+            } else { 0u64 };
 
         // Update credit line outstanding
         credit_line.current_outstanding -= principal_paid;
@@ -476,14 +485,18 @@ module kach::credit_engine {
         // If fully repaid (outstanding = 0), update trust score based on timing
         if (new_outstanding == 0) {
             // Get PRT maturity to check if on-time
-            let (_, _, _, maturity, _, _status, _) = prt::get_prt_info<FA>(prt);
+            let (_, original_principal, _, maturity, _, _status, _) =
+                prt::get_prt_info<FA>(prt);
             let was_on_time = timestamp::now_seconds() <= maturity;
 
-            if (was_on_time) {
-                trust_score::increment_on_time_payments(borrower_addr);
-            } else {
-                trust_score::increment_late_payments(borrower_addr);
-            };
+            let status = if (was_on_time) { 0u8 }
+            else { 1u8 }; // STATUS_ON_TIME or STATUS_LATE
+            trust_score::update_trust_score(
+                borrower_addr,
+                original_principal,
+                status,
+                governance_address
+            );
         };
 
         // Transfer assets from borrower to pool
@@ -513,6 +526,7 @@ module kach::credit_engine {
     public entry fun repay_credit<FA>(
         borrower: &signer,
         prt: Object<prt::PRT<FA>>,
+        governance_address: address,
         fa_metadata: Object<Metadata>
     ) acquires CreditLine {
         let borrower_addr = signer::address_of(borrower);
@@ -565,11 +579,14 @@ module kach::credit_engine {
         pool::update_borrowed<FA>(credit_line.pool_address, principal, false);
 
         // Update trust score based on repayment
-        if (was_on_time) {
-            trust_score::increment_on_time_payments(borrower_addr);
-        } else {
-            trust_score::increment_late_payments(borrower_addr);
-        };
+        let status = if (was_on_time) { 0u8 }
+        else { 1u8 }; // STATUS_ON_TIME or STATUS_LATE
+        trust_score::update_trust_score(
+            borrower_addr,
+            principal,
+            status,
+            governance_address
+        );
 
         event::emit(
             CreditRepaid {
@@ -645,7 +662,7 @@ module kach::credit_engine {
 
     /// Reactivate credit line (admin only)
     public entry fun reactivate_credit_line<FA>(
-        admin: &signer, borrower_address: address
+        admin: &signer, borrower_address: address, governance_address: address
     ) acquires CreditLine, CreditLineRegistry {
         let admin_addr = signer::address_of(admin);
 
@@ -661,7 +678,8 @@ module kach::credit_engine {
         let credit_line = borrow_global_mut<CreditLine<FA>>(borrower_address);
 
         // Verify trust score is acceptable
-        let trust_score_value = trust_score::get_trust_score(borrower_address);
+        let trust_score_value =
+            trust_score::get_trust_score(borrower_address, governance_address);
         assert!(trust_score_value >= MIN_TRUST_SCORE_TO_DRAW, E_TRUST_SCORE_TOO_LOW);
 
         credit_line.is_active = true;
