@@ -151,9 +151,72 @@ max_loan_amount = k * good_volume  // anti-gaming sizing gate
 - **≥ 95**: Eligible for prefund draws (no upfront attestation)
 - **< 60**: Credit access suspended until score recovers
 
-### Anti-Gaming Loan Sizing
-- `max_loan_amount = k * good_volume` (using decayed good_volume)
-- Large draws only allowed after repaying comparable, recent volume on time.
+### Credit Limit Management
+
+Attestators have two types of limits that work together:
+
+#### 1. Approved Credit Limit (Governance-Set)
+- Set by governance when Attestator is onboarded (e.g., $500K initial)
+- Based on due diligence, corridor risk, operational capacity
+- Can be **increased by governance** if Attestator demonstrates:
+  - Consistent on-time repayments over time
+  - Request for higher limits to support business growth
+  - Strong operational track record
+- Acts as an absolute ceiling regardless of earned capacity
+
+#### 2. Earned Capacity (Automatic, Volume-Based)
+- Calculated as: `earned_capacity = k × good_volume` (using decayed good_volume)
+- Grows automatically as Attestator repays loans on time
+- Prevents gaming: must earn right to larger draws through repayment history
+- Shrinks with decay if Attestator becomes inactive
+
+#### Combined Limit Logic
+
+**Bootstrap Period (First 10 Loans):**
+```
+max_loan_amount = approved_credit_limit
+```
+- New Attestators can draw up to their approved limit immediately
+- Builds initial repayment history without earned capacity restrictions
+- Solves cold-start problem
+
+**After Bootstrap:**
+```
+max_loan_amount = min(approved_credit_limit, earned_capacity)
+```
+- Must have earned capacity to support loan size
+- Cannot exceed governance-approved limit
+- Both limits can grow over time
+
+**Example Flow:**
+
+1. **Onboarding**: Governance approves $500K limit based on due diligence
+2. **Loans 1-10**: Can draw up to $500K (bootstrap period)
+3. **After 10 loans** with $400K total repaid on-time:
+   - `earned_capacity = 1.5 × $400K = $600K`
+   - `max_loan = min($500K approved, $600K earned) = $500K`
+   - Still capped by approved limit
+4. **Request for increase**: Attestator asks governance for $1M limit
+5. **Governance approval**: After reviewing track record, approves $1M
+6. **New limit**:
+   - `max_loan = min($1M approved, $600K earned) = $600K`
+   - Can now grow to $1M as they repay more volume
+7. **After $2M repaid**:
+   - `earned_capacity = 1.5 × $2M = $3M`
+   - `max_loan = min($1M approved, $3M earned) = $1M`
+   - Now at full approved limit
+
+**Key Benefits:**
+- **Governance control**: Can increase limits for proven Attestators
+- **Automatic growth**: Earned capacity grows with repayments
+- **Anti-gaming**: Can't jump to large loans without history
+- **Flexibility**: Two-lever system balances discretion and automation
+
+**Governance Functions:**
+- `initialize_trust_score(borrower, approved_credit_limit)`: Set initial limit at onboarding
+- `update_approved_credit_limit(borrower, new_limit)`: Increase (or decrease) approved limit based on performance review
+- View current limits: `get_max_loan_amount(borrower)` returns effective limit
+- Track history: `get_trust_score_details(borrower)` shows approved limit, earned capacity, and current score
 
 ### Pseudocode (TypeScript-style sketch)
 

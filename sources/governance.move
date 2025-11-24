@@ -53,6 +53,16 @@ module kach::governance {
         // Yield distribution parameters
         base_risk_premium_bps: u64,      // Base risk premium for dynamic yield calculation (e.g., 3000 = 30% = 0.3)
 
+        // Trust score parameters
+        trust_power_bps: u64,            // Power for per-loan weighting (e.g., 8000 = 0.8 for concave)
+        trust_w_late_bps: u64,           // Severity multiplier for late payments (e.g., 20000 = 2.0×)
+        trust_w_default_bps: u64,        // Severity multiplier for defaults (e.g., 50000 = 5.0×)
+        trust_decay_factor_bps: u64,     // Decay factor per interval (e.g., 9500 = 0.95)
+        trust_decay_interval_seconds: u64, // Decay interval in seconds (e.g., 2592000 = 30 days)
+        trust_volume_weight_bps: u64,    // Weight for volume score vs count (e.g., 7000 = 70% volume, 30% count)
+        trust_confidence_divisor: u64,   // Confidence scaling divisor (e.g., 50 loans for 1.0 bonus)
+        trust_anti_gaming_k_bps: u64,    // Anti-gaming multiplier k (e.g., 15000 = 1.5×)
+
         // Emergency controls
         global_pause: bool,
 
@@ -136,6 +146,14 @@ module kach::governance {
         min_trust_score_threshold: u64,
         default_tenor_seconds: u64,
         base_risk_premium_bps: u64,
+        trust_power_bps: u64,
+        trust_w_late_bps: u64,
+        trust_w_default_bps: u64,
+        trust_decay_factor_bps: u64,
+        trust_decay_interval_seconds: u64,
+        trust_volume_weight_bps: u64,
+        trust_confidence_divisor: u64,
+        trust_anti_gaming_k_bps: u64,
     ) {
         let deployer_addr = signer::address_of(deployer);
 
@@ -149,6 +167,9 @@ module kach::governance {
         assert!(min_trust_score_threshold <= 100, E_INVALID_PARAMETER);
         assert!(default_tenor_seconds > 0, E_INVALID_PARAMETER);
         assert!(base_risk_premium_bps <= 10000, E_INVALID_PARAMETER); // Max 100%
+        assert!(trust_power_bps <= 10000, E_INVALID_PARAMETER); // Max 1.0
+        assert!(trust_decay_factor_bps <= 10000, E_INVALID_PARAMETER); // Max 1.0
+        assert!(trust_volume_weight_bps <= 10000, E_INVALID_PARAMETER); // Max 100%
 
         let admins = vector::empty<address>();
         vector::push_back(&mut admins, deployer_addr);
@@ -164,6 +185,14 @@ module kach::governance {
             min_trust_score_threshold,
             default_tenor_seconds,
             base_risk_premium_bps,
+            trust_power_bps,
+            trust_w_late_bps,
+            trust_w_default_bps,
+            trust_decay_factor_bps,
+            trust_decay_interval_seconds,
+            trust_volume_weight_bps,
+            trust_confidence_divisor,
+            trust_anti_gaming_k_bps,
             global_pause: false,
             created_at: timestamp::now_seconds(),
             last_updated: timestamp::now_seconds(),
@@ -590,5 +619,54 @@ module kach::governance {
         assert!(exists<GovernanceConfig>(governance_addr), E_GOVERNANCE_NOT_FOUND);
         let config = borrow_global<GovernanceConfig>(governance_addr);
         config.emergency_responders
+    }
+
+    /// Trust score parameter getters
+    #[view]
+    public fun get_trust_power_bps(governance_addr: address): u64 acquires GovernanceConfig {
+        assert!(exists<GovernanceConfig>(governance_addr), E_GOVERNANCE_NOT_FOUND);
+        borrow_global<GovernanceConfig>(governance_addr).trust_power_bps
+    }
+
+    #[view]
+    public fun get_trust_w_late_bps(governance_addr: address): u64 acquires GovernanceConfig {
+        assert!(exists<GovernanceConfig>(governance_addr), E_GOVERNANCE_NOT_FOUND);
+        borrow_global<GovernanceConfig>(governance_addr).trust_w_late_bps
+    }
+
+    #[view]
+    public fun get_trust_w_default_bps(governance_addr: address): u64 acquires GovernanceConfig {
+        assert!(exists<GovernanceConfig>(governance_addr), E_GOVERNANCE_NOT_FOUND);
+        borrow_global<GovernanceConfig>(governance_addr).trust_w_default_bps
+    }
+
+    #[view]
+    public fun get_trust_decay_factor_bps(governance_addr: address): u64 acquires GovernanceConfig {
+        assert!(exists<GovernanceConfig>(governance_addr), E_GOVERNANCE_NOT_FOUND);
+        borrow_global<GovernanceConfig>(governance_addr).trust_decay_factor_bps
+    }
+
+    #[view]
+    public fun get_trust_decay_interval_seconds(governance_addr: address): u64 acquires GovernanceConfig {
+        assert!(exists<GovernanceConfig>(governance_addr), E_GOVERNANCE_NOT_FOUND);
+        borrow_global<GovernanceConfig>(governance_addr).trust_decay_interval_seconds
+    }
+
+    #[view]
+    public fun get_trust_volume_weight_bps(governance_addr: address): u64 acquires GovernanceConfig {
+        assert!(exists<GovernanceConfig>(governance_addr), E_GOVERNANCE_NOT_FOUND);
+        borrow_global<GovernanceConfig>(governance_addr).trust_volume_weight_bps
+    }
+
+    #[view]
+    public fun get_trust_confidence_divisor(governance_addr: address): u64 acquires GovernanceConfig {
+        assert!(exists<GovernanceConfig>(governance_addr), E_GOVERNANCE_NOT_FOUND);
+        borrow_global<GovernanceConfig>(governance_addr).trust_confidence_divisor
+    }
+
+    #[view]
+    public fun get_trust_anti_gaming_k_bps(governance_addr: address): u64 acquires GovernanceConfig {
+        assert!(exists<GovernanceConfig>(governance_addr), E_GOVERNANCE_NOT_FOUND);
+        borrow_global<GovernanceConfig>(governance_addr).trust_anti_gaming_k_bps
     }
 }
