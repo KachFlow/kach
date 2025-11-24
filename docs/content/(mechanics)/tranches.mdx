@@ -80,7 +80,7 @@ Numbers below are the current working defaults for testnet and the planned mainn
 | Target utilization band | 60–80% | Keeps headroom for withdrawals and Attestator draws. |
 | Deposit cap (per pool) | $10–25m during alpha | Raised only after clean repayment history and audit sign-off. |
 | Tenor bands | Standard 1–5 days; prefund/extended fixed 7/14/30/60/90 days | Longer tenors gated to top Trust Scores with additional guarantees. |
-| Capital weighting multipliers | Senior 0.8×, Junior 1.3× | Used for risk-adjusted interest distribution; governance-tunable. |
+| Base risk premium | 0.3 (30%) | Governance-tunable parameter used in dynamic yield calculation to adjust risk compensation. |
 | Reserve skim | 5–10% of gross interest | Funds protocol reserves before tranche distribution. |
 | Loss waterfall caps | Junior first-loss up to 80% of its principal, Senior up to 20% | Caps can tighten or loosen per pool. |
 | Concentration limits | Max 25–30% exposure to any single Attestator or corridor | Enforced at underwriting and draw time. |
@@ -89,24 +89,48 @@ Calculating yield distribution:
 
 1. Receive interest from Attestator repayments.
 2. Deduct protocol fee (7% of gross interest).
-3. Calculate capital-weighted shares:
-   - Senior weight = `senior_deposits × 0.8`
-   - Junior weight = `junior_deposits × 1.3`
+3. **Calculate dynamic capital-weighted multipliers** based on actual pool composition:
+   - **Protection ratio** = `senior_deposits / junior_deposits` (how many dollars of senior each junior dollar protects)
+   - **Junior multiplier** = `1.0 + (protection_ratio × base_risk_premium)`
+   - **Senior multiplier** = `1.0 - (junior_deposits / senior_deposits × base_risk_premium)`
+   - Where `base_risk_premium` = 0.3 (governance parameter)
+4. Calculate weighted shares:
+   - Senior weight = `senior_deposits × senior_multiplier`
+   - Junior weight = `junior_deposits × junior_multiplier`
    - Total weight = senior weight + junior weight
-4. Distribute remaining interest proportionally:
+5. Distribute remaining interest proportionally:
    - Senior receives: `(interest_after_fee) × (senior_weight / total_weight)`
    - Junior receives: `(interest_after_fee) × (junior_weight / total_weight)`
-5. Update [NAV](/glossary#nav) for each tranche based on distributed yield.
+6. Update [NAV](/glossary#nav) for each tranche based on distributed yield.
 
 **Example with $100M pool ($80M Senior, $20M Junior):**
 - Gross interest received: $1,000
 - Protocol fee (7%): $70 → leaves $930
-- Senior weight: $80M × 0.8 = 64M
-- Junior weight: $20M × 1.3 = 26M
-- Total weight: 90M
-- Senior gets: $930 × (64/90) = **$660** → 0.825% yield on $80M
-- Junior gets: $930 × (26/90) = **$270** → 1.35% yield on $20M
+- Protection ratio: $80M / $20M = 4.0
+- Junior multiplier: 1.0 + (4.0 × 0.3) = **2.2**
+- Senior multiplier: 1.0 - (20/80 × 0.3) = **0.925**
+- Senior weight: $80M × 0.925 = 74M
+- Junior weight: $20M × 2.2 = 44M
+- Total weight: 118M
+- Senior gets: $930 × (74/118) = **$583** → 0.729% yield on $80M
+- Junior gets: $930 × (44/118) = **$347** → 1.735% yield on $20M
 
-**Result:** Junior earns ~1.64× more per dollar (1.35% ÷ 0.825%) to compensate for first-loss risk.
+**Result:** Junior earns ~2.38× more per dollar (1.735% ÷ 0.729%) to compensate for first-loss risk.
+
+**Example with more balanced $100M pool ($50M Senior, $50M Junior):**
+- Gross interest received: $1,000
+- Protocol fee (7%): $70 → leaves $930
+- Protection ratio: $50M / $50M = 1.0
+- Junior multiplier: 1.0 + (1.0 × 0.3) = **1.3**
+- Senior multiplier: 1.0 - (50/50 × 0.3) = **0.7**
+- Senior weight: $50M × 0.7 = 35M
+- Junior weight: $50M × 1.3 = 65M
+- Total weight: 100M
+- Senior gets: $930 × (35/100) = **$326** → 0.651% yield on $50M
+- Junior gets: $930 × (65/100) = **$605** → 1.209% yield on $50M
+
+**Result:** Junior earns ~1.86× more per dollar (1.209% ÷ 0.651%). The premium is lower because risk is more evenly distributed.
+
+**Rationale for dynamic multipliers:** As junior becomes a smaller percentage of the pool, they protect proportionally more senior capital and bear greater concentration risk, so they automatically receive higher yield compensation. This creates fair risk-adjusted returns that adapt to actual pool composition rather than using static multipliers.
 
 These parameters are encoded on-chain per pool and can be versioned so historical Position NFTs always reference the rule set in effect when they were minted.

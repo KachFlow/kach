@@ -2,6 +2,7 @@ module kach::tranche {
     use aptos_framework::event;
     use aptos_framework::timestamp;
     use kach::pool;
+    use kach::governance;
 
     /// Identifier used when referring to the senior tranche.
     const TRANCHE_SENIOR: u8 = 0;
@@ -19,14 +20,6 @@ module kach::tranche {
     const JUNIOR_MAX_LOSS_BPS: u64 = 8000;
     /// Maximum share of capital that the senior tranche can lose (basis points).
     const SENIOR_MAX_LOSS_BPS: u64 = 2000;
-
-    /// Capital weighting multiplier for senior tranche (scaled by 10)
-    /// Documentation specifies 0.8x weight for senior
-    const SENIOR_CAPITAL_WEIGHT: u64 = 8; // 0.8 * 10
-
-    /// Capital weighting multiplier for junior tranche (scaled by 10)
-    /// Documentation specifies 1.3x weight for junior
-    const JUNIOR_CAPITAL_WEIGHT: u64 = 13; // 1.3 * 10
 
     /// Protocol fee percentage (7% of gross interest per documentation)
     const PROTOCOL_FEE_BPS: u64 = 700; // 7%
@@ -63,12 +56,15 @@ module kach::tranche {
 
     /// Distribute yield from interest to tranches
     /// Called after PRT repayment
-    /// Uses capital-weighted distribution per documentation:
-    /// - Senior weight: 0.8x
-    /// - Junior weight: 1.3x
+    /// Uses dynamic capital-weighted distribution per documentation:
+    /// - Multipliers calculated based on actual pool composition
+    /// - Junior multiplier = 1.0 + (protection_ratio × base_risk_premium)
+    /// - Senior multiplier = 1.0 - (junior_ratio × base_risk_premium)
     /// - Protocol fee: 7% of gross interest
     public fun distribute_yield<FA>(
-        pool_address: address, total_interest: u64
+        pool_address: address,
+        total_interest: u64,
+        governance_address: address
     ) {
         // Calculate protocol reserve share (7% per documentation)
         let protocol_share = (total_interest as u128) * (PROTOCOL_FEE_BPS as u128) / 10000;
@@ -84,26 +80,60 @@ module kach::tranche {
         let senior_deposits = pool::get_tranche_deposits<FA>(pool_address, TRANCHE_SENIOR);
         let junior_deposits = pool::get_tranche_deposits<FA>(pool_address, TRANCHE_JUNIOR);
 
-        // Calculate capital-weighted shares per documentation
-        // Senior weight = senior_deposits × 0.8
-        // Junior weight = junior_deposits × 1.3
-        // Each tranche receives: (interest_after_fee) × (tranche_weight / total_weight)
+        // Get base risk premium from governance (e.g., 3000 bps = 30% = 0.3)
+        let base_risk_premium_bps = governance::get_base_risk_premium_bps(governance_address);
 
-        let senior_weight = (senior_deposits as u128) * (SENIOR_CAPITAL_WEIGHT as u128); // × 8 (scaled)
-        let junior_weight = (junior_deposits as u128) * (JUNIOR_CAPITAL_WEIGHT as u128); // × 13 (scaled)
-        let total_weight = senior_weight + junior_weight;
+        // Calculate dynamic multipliers based on pool composition
+        // Protection ratio = how many dollars of senior each junior dollar protects
+        // Junior multiplier = 1.0 + (protection_ratio × base_risk_premium)
+        // Senior multiplier = 1.0 - (inverse_ratio × base_risk_premium)
 
-        // Distribute yield proportionally by capital weight
-        let senior_share = if (total_weight > 0) {
-            ((tranche_yield as u128) * senior_weight / total_weight as u64)
+        let senior_share: u64;
+        let junior_share: u64;
+
+        if (senior_deposits == 0 && junior_deposits == 0) {
+            // No deposits, no distribution
+            senior_share = 0;
+            junior_share = 0;
+        } else if (junior_deposits == 0) {
+            // Only senior depositors, they get all yield
+            senior_share = tranche_yield;
+            junior_share = 0;
+        } else if (senior_deposits == 0) {
+            // Only junior depositors, they get all yield
+            senior_share = 0;
+            junior_share = tranche_yield;
         } else {
-            0u64
-        };
+            // Both tranches have deposits, calculate dynamic weights
+            // Using scaled math to avoid decimals: multiply by 10000 for precision
 
-        let junior_share = if (total_weight > 0) {
-            ((tranche_yield as u128) * junior_weight / total_weight as u64)
-        } else {
-            0u64
+            // protection_ratio = senior / junior (scaled by 10000)
+            let protection_ratio_scaled = (senior_deposits as u128) * 10000 / (junior_deposits as u128);
+
+            // junior_multiplier = 1.0 + (protection_ratio × base_risk_premium)
+            // = 10000 + (protection_ratio_scaled × base_risk_premium_bps / 10000)
+            let junior_multiplier = 10000 + (protection_ratio_scaled * (base_risk_premium_bps as u128) / 10000);
+
+            // inverse_ratio = junior / senior (scaled by 10000)
+            let inverse_ratio_scaled = (junior_deposits as u128) * 10000 / (senior_deposits as u128);
+
+            // senior_multiplier = 1.0 - (inverse_ratio × base_risk_premium)
+            // = 10000 - (inverse_ratio_scaled × base_risk_premium_bps / 10000)
+            let senior_multiplier_calc = (inverse_ratio_scaled * (base_risk_premium_bps as u128) / 10000);
+            let senior_multiplier = if (10000 > senior_multiplier_calc) {
+                10000 - senior_multiplier_calc
+            } else {
+                1 // Minimum 0.0001× to avoid zero division
+            };
+
+            // Calculate weighted capital (scaled by 10000)
+            let senior_weight = (senior_deposits as u128) * senior_multiplier;
+            let junior_weight = (junior_deposits as u128) * junior_multiplier;
+            let total_weight = senior_weight + junior_weight;
+
+            // Distribute yield proportionally by weighted capital
+            senior_share = ((tranche_yield as u128) * senior_weight / total_weight as u64);
+            junior_share = ((tranche_yield as u128) * junior_weight / total_weight as u64);
         };
 
         // Update NAV multipliers for each tranche
@@ -290,16 +320,44 @@ module kach::tranche {
         );
     }
 
-    /// Get capital weight multiplier for a tranche (scaled by 10)
-    /// Senior: 0.8x (returns 8)
-    /// Junior: 1.3x (returns 13)
+    /// Calculate current dynamic multipliers for a pool based on composition
+    /// Returns (senior_multiplier_bps, junior_multiplier_bps) scaled by 10000
+    /// Example: If senior multiplier is 0.925, returns 9250
     #[view]
-    public fun get_capital_weight(tranche: u8): u64 {
-        if (tranche == TRANCHE_SENIOR) {
-            SENIOR_CAPITAL_WEIGHT
+    public fun calculate_current_multipliers<FA>(
+        pool_address: address,
+        governance_address: address
+    ): (u64, u64) {
+        let senior_deposits = pool::get_tranche_deposits<FA>(pool_address, TRANCHE_SENIOR);
+        let junior_deposits = pool::get_tranche_deposits<FA>(pool_address, TRANCHE_JUNIOR);
+        let base_risk_premium_bps = governance::get_base_risk_premium_bps(governance_address);
+
+        if (junior_deposits == 0) {
+            return (10000, 0) // Senior gets 1.0×, junior N/A
+        };
+
+        if (senior_deposits == 0) {
+            return (0, 10000) // Junior gets 1.0×, senior N/A
+        };
+
+        // protection_ratio = senior / junior (scaled by 10000)
+        let protection_ratio_scaled = (senior_deposits as u128) * 10000 / (junior_deposits as u128);
+
+        // junior_multiplier = 1.0 + (protection_ratio × base_risk_premium)
+        let junior_multiplier = 10000 + (protection_ratio_scaled * (base_risk_premium_bps as u128) / 10000);
+
+        // inverse_ratio = junior / senior (scaled by 10000)
+        let inverse_ratio_scaled = (junior_deposits as u128) * 10000 / (senior_deposits as u128);
+
+        // senior_multiplier = 1.0 - (inverse_ratio × base_risk_premium)
+        let senior_multiplier_calc = (inverse_ratio_scaled * (base_risk_premium_bps as u128) / 10000);
+        let senior_multiplier = if (10000 > senior_multiplier_calc) {
+            10000 - senior_multiplier_calc
         } else {
-            JUNIOR_CAPITAL_WEIGHT
-        }
+            1
+        };
+
+        ((senior_multiplier as u64), (junior_multiplier as u64))
     }
 
     /// Get max loss a tranche can absorb (in bps of tranche capital)

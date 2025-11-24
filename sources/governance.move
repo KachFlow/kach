@@ -50,6 +50,9 @@ module kach::governance {
         min_trust_score_threshold: u64,  // Minimum trust score to draw credit
         default_tenor_seconds: u64,      // Default loan tenor
 
+        // Yield distribution parameters
+        base_risk_premium_bps: u64,      // Base risk premium for dynamic yield calculation (e.g., 3000 = 30% = 0.3)
+
         // Emergency controls
         global_pause: bool,
 
@@ -132,6 +135,7 @@ module kach::governance {
         max_lock_duration_seconds: u64,
         min_trust_score_threshold: u64,
         default_tenor_seconds: u64,
+        base_risk_premium_bps: u64,
     ) {
         let deployer_addr = signer::address_of(deployer);
 
@@ -144,6 +148,7 @@ module kach::governance {
         assert!(max_lock_duration_seconds >= min_lock_duration_seconds, E_INVALID_PARAMETER);
         assert!(min_trust_score_threshold <= 100, E_INVALID_PARAMETER);
         assert!(default_tenor_seconds > 0, E_INVALID_PARAMETER);
+        assert!(base_risk_premium_bps <= 10000, E_INVALID_PARAMETER); // Max 100%
 
         let admins = vector::empty<address>();
         vector::push_back(&mut admins, deployer_addr);
@@ -158,6 +163,7 @@ module kach::governance {
             max_lock_duration_seconds,
             min_trust_score_threshold,
             default_tenor_seconds,
+            base_risk_premium_bps,
             global_pause: false,
             created_at: timestamp::now_seconds(),
             last_updated: timestamp::now_seconds(),
@@ -409,6 +415,33 @@ module kach::governance {
         });
     }
 
+    /// Update base risk premium (admin only)
+    public entry fun update_base_risk_premium(
+        admin: &signer,
+        new_premium_bps: u64,
+        governance_addr: address,
+    ) acquires GovernanceConfig {
+        let admin_addr = signer::address_of(admin);
+
+        assert!(exists<GovernanceConfig>(governance_addr), E_GOVERNANCE_NOT_FOUND);
+        let config = borrow_global_mut<GovernanceConfig>(governance_addr);
+
+        assert!(is_admin_internal(&config.admins, admin_addr), E_NOT_AUTHORIZED);
+        assert!(new_premium_bps <= 10000, E_INVALID_PARAMETER); // Max 100%
+
+        let old_value = config.base_risk_premium_bps;
+        config.base_risk_premium_bps = new_premium_bps;
+        config.last_updated = timestamp::now_seconds();
+
+        event::emit(ParameterUpdated {
+            parameter_name: b"base_risk_premium_bps",
+            old_value,
+            new_value: new_premium_bps,
+            updated_by: admin_addr,
+            timestamp: timestamp::now_seconds(),
+        });
+    }
+
     /// Toggle global pause (admin or emergency responder)
     public entry fun toggle_global_pause(
         caller: &signer,
@@ -529,6 +562,13 @@ module kach::governance {
         assert!(exists<GovernanceConfig>(governance_addr), E_GOVERNANCE_NOT_FOUND);
         let config = borrow_global<GovernanceConfig>(governance_addr);
         config.default_tenor_seconds
+    }
+
+    #[view]
+    public fun get_base_risk_premium_bps(governance_addr: address): u64 acquires GovernanceConfig {
+        assert!(exists<GovernanceConfig>(governance_addr), E_GOVERNANCE_NOT_FOUND);
+        let config = borrow_global<GovernanceConfig>(governance_addr);
+        config.base_risk_premium_bps
     }
 
     #[view]

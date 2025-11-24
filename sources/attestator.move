@@ -553,6 +553,7 @@ module kach::attestator {
         prt: Object<PRT<FA>>,
         attestation: Object<Attestation>,
         registry_addr: address,
+        governance_addr: address,
         fa_metadata: Object<Metadata>
     ) acquires Attestation, AttestatorRegistry {
         let attestator_addr = signer::address_of(attestator);
@@ -660,7 +661,7 @@ module kach::attestator {
         );
 
         // Distribute yield to tranches
-        tranche::distribute_yield<FA>(pool_address, interest);
+        tranche::distribute_yield<FA>(pool_address, interest, governance_addr);
     }
 
     /// Slash attestator stake (admin only, for false attestations leading to defaults)
