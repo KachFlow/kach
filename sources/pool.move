@@ -15,10 +15,8 @@ module kach::pool {
 
     /// Identifier used for senior tranche accounting.
     const TRANCHE_SENIOR: u8 = 0;
-    /// Identifier used for mezzanine tranche accounting.
-    const TRANCHE_MEZZANINE: u8 = 1;
     /// Identifier used for junior tranche accounting.
-    const TRANCHE_JUNIOR: u8 = 2;
+    const TRANCHE_JUNIOR: u8 = 1;
 
     /// Error when caller lacks the necessary capability to mutate the pool.
     const E_NOT_AUTHORIZED: u64 = 1;
@@ -43,18 +41,15 @@ module kach::pool {
 
         // Deposits per tranche
         senior_deposits: u64,
-        mezzanine_deposits: u64,
         junior_deposits: u64,
 
         // NAV multipliers per tranche (scaled by 1e18)
         // Starts at 1e18, increases as yield accrues
         senior_nav_multiplier: u128,
-        mezzanine_nav_multiplier: u128,
         junior_nav_multiplier: u128,
 
         // Target allocation (in basis points, sum to 10000)
         senior_target_bps: u64,
-        mezzanine_target_bps: u64,
         junior_target_bps: u64,
 
         // Utilization cap (e.g., 8000 = 80% max utilization)
@@ -126,7 +121,6 @@ module kach::pool {
         admin: &signer,
         fa_metadata: Object<Metadata>,
         senior_target_bps: u64,
-        mezzanine_target_bps: u64,
         junior_target_bps: u64,
         max_utilization_bps: u64,
         protocol_reserve_target_bps: u64,
@@ -137,7 +131,7 @@ module kach::pool {
 
         // Validate tranche allocation sums to 100%
         assert!(
-            senior_target_bps + mezzanine_target_bps + junior_target_bps == 10000,
+            senior_target_bps + junior_target_bps == 10000,
             E_INVALID_TRANCHE_ALLOCATION
         );
 
@@ -146,13 +140,10 @@ module kach::pool {
             total_deposits: 0,
             total_borrowed: 0,
             senior_deposits: 0,
-            mezzanine_deposits: 0,
             junior_deposits: 0,
             senior_nav_multiplier: 1_000_000_000_000_000_000, // 1e18
-            mezzanine_nav_multiplier: 1_000_000_000_000_000_000,
             junior_nav_multiplier: 1_000_000_000_000_000_000,
             senior_target_bps,
-            mezzanine_target_bps,
             junior_target_bps,
             max_utilization_bps,
             protocol_reserve_balance: 0,
@@ -231,8 +222,6 @@ module kach::pool {
 
         if (tranche == TRANCHE_SENIOR) {
             pool.senior_nav_multiplier
-        } else if (tranche == TRANCHE_MEZZANINE) {
-            pool.mezzanine_nav_multiplier
         } else {
             pool.junior_nav_multiplier
         }
@@ -260,8 +249,6 @@ module kach::pool {
 
         if (tranche == TRANCHE_SENIOR) {
             pool.senior_nav_multiplier = new_multiplier;
-        } else if (tranche == TRANCHE_MEZZANINE) {
-            pool.mezzanine_nav_multiplier = new_multiplier;
         } else if (tranche == TRANCHE_JUNIOR) {
             pool.junior_nav_multiplier = new_multiplier;
         }
@@ -296,8 +283,6 @@ module kach::pool {
 
             if (tranche == TRANCHE_SENIOR) {
                 pool.senior_deposits += amount;
-            } else if (tranche == TRANCHE_MEZZANINE) {
-                pool.mezzanine_deposits += amount;
             } else {
                 pool.junior_deposits += amount;
             }
@@ -306,8 +291,6 @@ module kach::pool {
 
             if (tranche == TRANCHE_SENIOR) {
                 pool.senior_deposits -= amount;
-            } else if (tranche == TRANCHE_MEZZANINE) {
-                pool.mezzanine_deposits -= amount;
             } else {
                 pool.junior_deposits -= amount;
             }
@@ -380,8 +363,6 @@ module kach::pool {
 
         if (tranche == TRANCHE_SENIOR) {
             pool.senior_deposits
-        } else if (tranche == TRANCHE_MEZZANINE) {
-            pool.mezzanine_deposits
         } else {
             pool.junior_deposits
         }

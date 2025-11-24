@@ -5,10 +5,8 @@ module kach::tranche {
 
     /// Identifier used when referring to the senior tranche.
     const TRANCHE_SENIOR: u8 = 0;
-    /// Identifier used when referring to the mezzanine tranche.
-    const TRANCHE_MEZZANINE: u8 = 1;
     /// Identifier used when referring to the junior tranche.
-    const TRANCHE_JUNIOR: u8 = 2;
+    const TRANCHE_JUNIOR: u8 = 1;
 
     /// Error when a caller lacks the privileges to execute tranche operations.
     const E_NOT_AUTHORIZED: u64 = 1;
@@ -19,10 +17,19 @@ module kach::tranche {
 
     /// Maximum share of capital that the junior tranche can lose (basis points).
     const JUNIOR_MAX_LOSS_BPS: u64 = 8000;
-    /// Maximum share of capital that the mezzanine tranche can lose (basis points).
-    const MEZZANINE_MAX_LOSS_BPS: u64 = 4000;
     /// Maximum share of capital that the senior tranche can lose (basis points).
     const SENIOR_MAX_LOSS_BPS: u64 = 2000;
+
+    /// Capital weighting multiplier for senior tranche (scaled by 10)
+    /// Documentation specifies 0.8x weight for senior
+    const SENIOR_CAPITAL_WEIGHT: u64 = 8; // 0.8 * 10
+
+    /// Capital weighting multiplier for junior tranche (scaled by 10)
+    /// Documentation specifies 1.3x weight for junior
+    const JUNIOR_CAPITAL_WEIGHT: u64 = 13; // 1.3 * 10
+
+    /// Protocol fee percentage (7% of gross interest per documentation)
+    const PROTOCOL_FEE_BPS: u64 = 700; // 7%
 
     /// Events
     #[event]
@@ -31,7 +38,6 @@ module kach::tranche {
         total_interest: u64,
         protocol_reserve_share: u64,
         senior_share: u64,
-        mezzanine_share: u64,
         junior_share: u64,
         timestamp: u64
     }
@@ -42,7 +48,6 @@ module kach::tranche {
         total_loss: u64,
         protocol_reserve_absorbed: u64,
         junior_absorbed: u64,
-        mezzanine_absorbed: u64,
         senior_absorbed: u64,
         timestamp: u64
     }
@@ -58,59 +63,60 @@ module kach::tranche {
 
     /// Distribute yield from interest to tranches
     /// Called after PRT repayment
-    /// Flow: protocol_reserve -> junior -> mezzanine -> senior (weighted by target allocation)
+    /// Uses capital-weighted distribution per documentation:
+    /// - Senior weight: 0.8x
+    /// - Junior weight: 1.3x
+    /// - Protocol fee: 7% of gross interest
     public fun distribute_yield<FA>(
         pool_address: address, total_interest: u64
     ) {
-        // Get pool configuration
-        let (_total_deposits, _, _protocol_reserve_balance, _, _, _is_paused) =
-            pool::get_pool_stats<FA>(pool_address);
-
-        // Calculate protocol reserve share
-        let protocol_fee_bps = pool::get_protocol_fee_bps<FA>(pool_address);
-        let protocol_share = (total_interest as u128) * (protocol_fee_bps as u128) / 10000;
+        // Calculate protocol reserve share (7% per documentation)
+        let protocol_share = (total_interest as u128) * (PROTOCOL_FEE_BPS as u128) / 10000;
         let protocol_share_u64 = (protocol_share as u64);
 
         // Add to protocol reserve
         pool::add_to_reserve<FA>(pool_address, protocol_share_u64);
 
-        // Remaining yield for tranches
+        // Remaining yield for tranches after protocol fee
         let tranche_yield = total_interest - protocol_share_u64;
 
-        // Get tranche deposits (need to calculate from pool)
-        // For now, using target allocations as approximation
-        let _senior_target_bps = 5000; // 50%
-        let _mezzanine_target_bps = 3000; // 30%
-        let _junior_target_bps = 2000; // 20%
+        // Get actual tranche deposits
+        let senior_deposits = pool::get_tranche_deposits<FA>(pool_address, TRANCHE_SENIOR);
+        let junior_deposits = pool::get_tranche_deposits<FA>(pool_address, TRANCHE_JUNIOR);
 
-        // Distribute yield proportionally to deposits
-        // In reality, junior gets higher share for taking more risk
-        // Using risk-adjusted distribution:
-        // Junior: 50% of yield (highest risk)
-        // Mezzanine: 30%
-        // Senior: 20% (lowest risk)
+        // Calculate capital-weighted shares per documentation
+        // Senior weight = senior_deposits × 0.8
+        // Junior weight = junior_deposits × 1.3
+        // Each tranche receives: (interest_after_fee) × (tranche_weight / total_weight)
 
-        let junior_share = (tranche_yield as u128) * 5000 / 10000;
-        let mezzanine_share = (tranche_yield as u128) * 3000 / 10000;
-        let senior_share = (tranche_yield as u128) * 2000 / 10000;
+        let senior_weight = (senior_deposits as u128) * (SENIOR_CAPITAL_WEIGHT as u128); // × 8 (scaled)
+        let junior_weight = (junior_deposits as u128) * (JUNIOR_CAPITAL_WEIGHT as u128); // × 13 (scaled)
+        let total_weight = senior_weight + junior_weight;
+
+        // Distribute yield proportionally by capital weight
+        let senior_share = if (total_weight > 0) {
+            ((tranche_yield as u128) * senior_weight / total_weight as u64)
+        } else {
+            0u64
+        };
+
+        let junior_share = if (total_weight > 0) {
+            ((tranche_yield as u128) * junior_weight / total_weight as u64)
+        } else {
+            0u64
+        };
 
         // Update NAV multipliers for each tranche
         update_nav_for_yield<FA>(
             pool_address,
             TRANCHE_SENIOR,
-            (senior_share as u64)
-        );
-
-        update_nav_for_yield<FA>(
-            pool_address,
-            TRANCHE_MEZZANINE,
-            (mezzanine_share as u64)
+            senior_share
         );
 
         update_nav_for_yield<FA>(
             pool_address,
             TRANCHE_JUNIOR,
-            (junior_share as u64)
+            junior_share
         );
 
         event::emit(
@@ -118,20 +124,18 @@ module kach::tranche {
                 pool_address,
                 total_interest,
                 protocol_reserve_share: protocol_share_u64,
-                senior_share: (senior_share as u64),
-                mezzanine_share: (mezzanine_share as u64),
-                junior_share: (junior_share as u64),
+                senior_share,
+                junior_share,
                 timestamp: timestamp::now_seconds()
             }
         );
     }
 
     /// Allocate losses across tranches using waterfall
-    /// From whitepaper Section 9.2:
-    /// 1. First to Junior (up to 80% of junior capital)
-    /// 2. Then to Mezzanine (up to 40% of mezz capital)
-    /// 3. Finally to Senior (up to 20% of senior capital)
-    /// Protocol reserve absorbs losses BEFORE tranches
+    /// Per documentation (tranches.mdx):
+    /// 1. Protocol Reserve absorbs first
+    /// 2. Junior tranche (up to 80% of junior capital)
+    /// 3. Senior tranche (up to 20% of senior capital, if needed)
     public fun allocate_loss<FA>(pool_address: address, total_loss: u64) {
         let remaining_loss = total_loss;
 
@@ -154,7 +158,6 @@ module kach::tranche {
         };
 
         let junior_absorbed = 0u64;
-        let mezzanine_absorbed = 0u64;
         let senior_absorbed = 0u64;
 
         if (remaining_loss > 0) {
@@ -168,17 +171,7 @@ module kach::tranche {
         };
 
         if (remaining_loss > 0) {
-            // Step 2: Mezzanine tranche absorbs (up to 40% of mezz deposits)
-            (remaining_loss, mezzanine_absorbed) = absorb_loss_in_tranche<FA>(
-                pool_address,
-                TRANCHE_MEZZANINE,
-                remaining_loss,
-                MEZZANINE_MAX_LOSS_BPS
-            );
-        };
-
-        if (remaining_loss > 0) {
-            // Step 3: Senior tranche absorbs (up to 20% of senior deposits)
+            // Step 2: Senior tranche absorbs (up to 20% of senior deposits)
             (_, senior_absorbed) = absorb_loss_in_tranche<FA>(
                 pool_address,
                 TRANCHE_SENIOR,
@@ -195,7 +188,6 @@ module kach::tranche {
                 total_loss,
                 protocol_reserve_absorbed: protocol_absorbed,
                 junior_absorbed,
-                mezzanine_absorbed,
                 senior_absorbed,
                 timestamp: timestamp::now_seconds()
             }
@@ -298,16 +290,15 @@ module kach::tranche {
         );
     }
 
-    /// Calculate expected yield share for a tranche based on risk
-    /// Junior takes most risk -> gets most yield
+    /// Get capital weight multiplier for a tranche (scaled by 10)
+    /// Senior: 0.8x (returns 8)
+    /// Junior: 1.3x (returns 13)
     #[view]
-    public fun get_yield_share_bps(tranche: u8): u64 {
-        if (tranche == TRANCHE_JUNIOR) {
-            5000 // 50% of yield
-        } else if (tranche == TRANCHE_MEZZANINE) {
-            3000 // 30% of yield
+    public fun get_capital_weight(tranche: u8): u64 {
+        if (tranche == TRANCHE_SENIOR) {
+            SENIOR_CAPITAL_WEIGHT
         } else {
-            2000 // 20% of yield (senior)
+            JUNIOR_CAPITAL_WEIGHT
         }
     }
 
@@ -316,11 +307,15 @@ module kach::tranche {
     public fun get_max_loss_bps(tranche: u8): u64 {
         if (tranche == TRANCHE_JUNIOR) {
             JUNIOR_MAX_LOSS_BPS
-        } else if (tranche == TRANCHE_MEZZANINE) {
-            MEZZANINE_MAX_LOSS_BPS
         } else {
             SENIOR_MAX_LOSS_BPS
         }
+    }
+
+    /// Get protocol fee in basis points (7%)
+    #[view]
+    public fun get_protocol_fee_bps(): u64 {
+        PROTOCOL_FEE_BPS
     }
 }
 

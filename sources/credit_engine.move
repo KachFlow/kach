@@ -35,6 +35,12 @@ module kach::credit_engine {
     /// Higher trust score threshold required for prefund credit draws.
     const MIN_TRUST_SCORE_FOR_PREFUND: u64 = 95;
 
+    /// Minimum tenor for standard draws (1 day in seconds)
+    const MIN_STANDARD_TENOR_SECONDS: u64 = 86400; // 1 day
+
+    /// Maximum tenor for standard draws (5 days in seconds)
+    const MAX_STANDARD_TENOR_SECONDS: u64 = 432000; // 5 days
+
     /// Credit line for a borrower - tied to specific asset pool
     struct CreditLine<phantom FA> has key {
         borrower_address: address,
@@ -249,6 +255,12 @@ module kach::credit_engine {
             } else {
                 tenor_seconds
             };
+
+        // Validate tenor is within 1-5 day range for standard draws per documentation
+        assert!(
+            actual_tenor >= MIN_STANDARD_TENOR_SECONDS && actual_tenor <= MAX_STANDARD_TENOR_SECONDS,
+            E_NOT_AUTHORIZED
+        );
 
         let interest_rate = credit_line.default_interest_rate_bps;
 
