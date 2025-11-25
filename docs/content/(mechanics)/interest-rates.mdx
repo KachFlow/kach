@@ -1,6 +1,6 @@
 ---
 title: "Interest Rate Model"
-description: "Fixed tenor-based interest rates with time-weighted calculations for prefund loans and early repayment incentives."
+description: "Fixed tenor-based interest rates with time-weighted calculations for prefund loans."
 ---
 
 ## Overview
@@ -14,7 +14,7 @@ Kach uses a **fixed tenor-based interest rate model** where rates are predetermi
 This model is optimized for short-term cross-border settlement credit where:
 - Borrowers need predictable costs for planning
 - Fast repayment cycles create yield through velocity
-- Time-weighted calculations reward early repayment
+- Time-weighted calculations naturally lower cost when repaid early
 - Simplicity reduces operational complexity
 
 ## Tenor Options and Rates
@@ -158,44 +158,9 @@ graph LR
 
 This rewards borrowers for repaying principal early, reducing the capital tied up and allowing the pool to redeploy faster.
 
-## Early Repayment Incentive
+## Early Repayment Effect
 
-To further encourage fast repayment, Kach offers a **200 basis point (2%) bonus** on interest saved through early repayment, implemented as a 1.02× multiplier on the interest that would have accrued if funds stayed out for the remaining days:
-
-### Calculation
-
-```move
-saved_interest = full_term_interest - actual_interest_paid
-early_repayment_bonus = saved_interest × 1.02  // saved interest plus a 2% kicker
-net_interest = actual_interest_paid - early_repayment_bonus
-```
-
-### Example with Bonus
-
-Using the prefund example above:
-
-- Full-term interest: $120.00
-- Actual interest (before bonus): $66.40
-- Interest saved: $53.60
-- Early repayment discount (saved interest × 1.02): $53.60 × 1.02 = **$54.67**
-- **Net interest charged**: $66.40 - $54.67 = **$11.73**
-
-Because the current implementation discounts more than the saved interest, aggressively early repayments can drive net interest close to zero; governance can tune this via `EARLY_REPAYMENT_DISCOUNT_BPS`.
-
-### Bonus Rationale
-
-**Why Offer This Bonus?**
-
-1. **Capital Velocity**: Faster repayment = more cycles = higher overall yield for LPs
-2. **Risk Reduction**: Less time outstanding = lower default risk
-3. **Behavioral Incentive**: Makes early repayment economically attractive
-4. **Competitive Advantage**: Unique feature vs. traditional lenders
-5. **System Health**: Encourages healthy cash flow patterns
-
-**Cost to Protocol**:
-- Bonus paid from protocol interest share (currently 7% fee)
-- Net positive if repayment velocity increases
-- Expected: Bonus costs < gains from additional cycles
+There is no explicit bonus for early repayment. Time-weighted interest on prefund PRTs already rewards fast repayment by reducing the amount of interest owed and by freeing liquidity for the next draw.
 
 ## Interest Distribution
 
@@ -268,14 +233,14 @@ The key insight: **capital velocity creates yield velocity**
 - ROI: 1.152% annually (poor)
 
 **Multiple Cycles (Kach Model)**:
-- Average 10-day repayment through early incentives
+- Average 10-day repayment driven by operational repayment behavior
 - Month 1: 3 cycles × $800K × 120 bps × (10/30) = $960 interest
 - Annual: $960 × 12 = **$11,520** (same)
 
 Wait, that seems identical? The trick is **higher utilization** from faster recycling:
 
 **Realistic Kach Model**:
-- 7-day average cycle (due to early repayment bonus)
+- 7-day average cycle (based on observed repayment speed)
 - Utilization: 85% (vs. 60% for 30-day)
 - Cycles per month: ~4.3
 - Interest per cycle: $850K × 35 bps = $297.50
@@ -285,7 +250,7 @@ Wait, that seems identical? The trick is **higher utilization** from faster recy
 
 The velocity compounds when:
 1. Shorter actual tenors (7-14 days)
-2. Early repayment incentives work
+2. Faster repayment behavior persists
 3. Higher utilization from capital availability
 4. Attestators build trust for faster prefund access
 
@@ -365,7 +330,6 @@ All rates are ultimately controlled by governance (currently Bayta admin multisi
 **Adjustable Parameters**:
 - Tenor options (can add new tenors)
 - Rate per tenor (can adjust up/down)
-- Early repayment bonus percentage
 - Protocol fee percentage
 - Tranche distribution percentages
 
@@ -385,7 +349,7 @@ All rates are ultimately controlled by governance (currently Bayta admin multisi
 - Average days to repayment (actual vs. contracted tenor)
 - Total interest earned per month
 - Effective APY delivered to LPs (after velocity)
-- Early repayment bonus cost vs. velocity gains
+- Impact of repayment speed on velocity and utilization
 
 **For LPs**:
 - Current [NAV](/glossary#nav) multiplier (yield accrual tracker)
@@ -425,7 +389,6 @@ The protocol implements the following key contract functions in `interest_rate.m
 - **get_rate_for_tenor()**: Returns the rate in basis points for a valid tenor
 - **is_valid_tenor()**: Checks if a tenor is one of the five supported options
 - **calculate_time_weighted_interest()**: Calculates interest for a portion of principal over a time period (used in prefund repayments)
-- **calculate_early_repayment_discount()**: Calculates the 2% bonus on interest saved through early repayment
 
 ### Constants
 
@@ -435,7 +398,6 @@ Tenor durations and rates are hardcoded:
 - 30 days: 2,592,000 seconds, 120 bps
 - 60 days: 5,184,000 seconds, 220 bps
 - 90 days: 7,776,000 seconds, 320 bps
-- Early repayment discount: 200 bps (2%)
 
 ## Related Documentation
 

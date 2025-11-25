@@ -3,6 +3,8 @@ title: "Tranches and Risk Layers"
 description: "Explains senior/junior structure and how losses/yield flow."
 ---
 
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
 ### Motivation
 
 Not all depositors have the same risk appetite. Some want stable, lower yields and stronger protection in stressed scenarios. Others are willing to absorb more risk in exchange for higher returns.
@@ -43,25 +45,28 @@ graph TD
     H -.->|Senior Principal: $800K<br/>Max Loss: 20% = $160K| I[Senior Absorbs Remainder]
 ```
 
-**Example Scenario: $100K Default on $1M Pool**
+**Example Scenario: 100K Default on $1M Pool**
 
-- **Gross Loss**: $100,000
-- **Step 1**: Protocol Reserve absorbs $50K (depleted)
-- **Step 2**: Junior tranche absorbs remaining $50K
-  - Junior principal: $200K → Loss: $50K (25% of junior capital)
-  - Junior NAV: 1.0 → 0.75
-- **Step 3**: Senior tranche unaffected (loss absorbed by junior)
-  - Senior NAV: 1.0 (no impact)
-
-1.  The protocol calculates the net realized loss after any recoveries.
-
-2.  Losses are allocated in the following order:
-
-    -   First to the **Junior** tranche, up to 80% of junior principal.
-
-    -   Then to the **Senior** tranche up to 20%, if losses exceed the junior cushion.
-
-3.  Within each [tranche](/glossary#tranche), losses are shared pro rata according to the share counts and [NAV](/glossary#nav) multipliers encoded in each [Position NFT](/glossary#position-nft), so accounting and redemption amounts can be independently verified from on-chain metadata.
+<Steps>
+  <Step title="Gross loss: $100,000">
+    Baseline loss to allocate after any recoveries.
+  </Step>
+  <Step title="Reserve takes first $50K">
+    Protocol reserve absorbs half the loss and is depleted.
+  </Step>
+  <Step title="Junior absorbs remaining $50K">
+    Junior principal: $200K → Loss: $50K (25% of junior capital); Junior NAV: 1.0 → 0.75.
+  </Step>
+  <Step title="Waterfall order">
+    Losses hit junior first (up to 80% of junior principal), then senior (up to 20%) if needed.
+  </Step>
+  <Step title="Pro-rata within each tranche">
+    Losses share pro rata by each Position NFT’s shares and NAV so redemption math is independently verifiable.
+  </Step>
+  <Step title="Senior unaffected in this scenario">
+    Junior coverage is sufficient, so senior NAV stays at 1.0.
+  </Step>
+</Steps>
 
 Yield works in the opposite direction:
 
@@ -104,30 +109,40 @@ Calculating yield distribution:
 6. Update [NAV](/glossary#nav) for each tranche based on distributed yield.
 
 **Example with $100M pool ($80M Senior, $20M Junior):**
-- Gross interest received: $1,000
-- Protocol fee (7%): $70 → leaves $930
-- Protection ratio: $80M / $20M = 4.0
-- Junior multiplier: 1.0 + (4.0 × 0.3) = **2.2**
-- Senior multiplier: 1.0 - (20/80 × 0.3) = **0.925**
-- Senior weight: $80M × 0.925 = 74M
-- Junior weight: $20M × 2.2 = 44M
-- Total weight: 118M
-- Senior gets: $930 × (74/118) = **$583** → 0.729% yield on $80M
-- Junior gets: $930 × (44/118) = **$347** → 1.735% yield on $20M
+
+<Steps>
+  <Step title="Collect $1,000 interest, skim $70 fee">
+    Protocol keeps 7%, leaving $930 for LPs.
+  </Step>
+  <Step title="Compute protection ratio and multipliers">
+    Protection ratio: 4.0. Junior multiplier: 2.2. Senior multiplier: 0.925.
+  </Step>
+  <Step title="Weight capital by multipliers">
+    Senior weight: 74M. Junior weight: 44M. Total: 118M.
+  </Step>
+  <Step title="Distribute interest">
+    Senior receives $930 × (74/118) = $583 (0.729% on $80M); Junior receives $930 × (44/118) = $347 (1.735% on $20M).
+  </Step>
+</Steps>
 
 **Result:** Junior earns ~2.38× more per dollar (1.735% ÷ 0.729%) to compensate for first-loss risk.
 
 **Example with more balanced $100M pool ($50M Senior, $50M Junior):**
-- Gross interest received: $1,000
-- Protocol fee (7%): $70 → leaves $930
-- Protection ratio: $50M / $50M = 1.0
-- Junior multiplier: 1.0 + (1.0 × 0.3) = **1.3**
-- Senior multiplier: 1.0 - (50/50 × 0.3) = **0.7**
-- Senior weight: $50M × 0.7 = 35M
-- Junior weight: $50M × 1.3 = 65M
-- Total weight: 100M
-- Senior gets: $930 × (35/100) = **$326** → 0.651% yield on $50M
-- Junior gets: $930 × (65/100) = **$605** → 1.209% yield on $50M
+
+<Steps>
+  <Step title="Collect $1,000 interest, skim $70 fee">
+    Protocol keeps 7%, leaving $930 for LPs.
+  </Step>
+  <Step title="Compute protection ratio and multipliers">
+    Protection ratio: 1.0. Junior multiplier: 1.3. Senior multiplier: 0.7.
+  </Step>
+  <Step title="Weight capital by multipliers">
+    Senior weight: 35M. Junior weight: 65M. Total: 100M.
+  </Step>
+  <Step title="Distribute interest">
+    Senior receives $930 × (35/100) = $326 (0.651% on $50M); Junior receives $930 × (65/100) = $605 (1.209% on $50M).
+  </Step>
+</Steps>
 
 **Result:** Junior earns ~1.86× more per dollar (1.209% ÷ 0.651%). The premium is lower because risk is more evenly distributed.
 
