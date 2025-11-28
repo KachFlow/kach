@@ -51,7 +51,7 @@ jobs:
 
       - name: Initialize Aptos CLI profile
         run: |
-          aptos init --profile default --network local --assume-yes || true
+          echo -e "\n\n" | aptos init --network local --profile default
 
       - name: Deploy contracts to localnet
         run: just localnet-deploy
