@@ -8,8 +8,8 @@ import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
 // Configuration from environment
 const NETWORK = (process.env.NETWORK as Network) || Network.LOCAL;
 const FULLNODE_URL = process.env.FULLNODE_URL;
-const MODULE_ADDRESS = process.env.MODULE_ADDRESS || getDefaultAddress();
 const ADDRESS_REGEX = /account:\s*([a-fA-F0-9x]+)/;
+const MODULE_ADDRESS = process.env.MODULE_ADDRESS || getDefaultAddress();
 
 function getDefaultAddress(): string {
   // Try to read from .aptos/config.yaml default profile
@@ -29,8 +29,8 @@ function getDefaultAddress(): string {
         }
       }
     }
-  } catch (_e) {
-    // Ignore errors, will prompt user
+  } catch (e) {
+    console.error("Error reading config:", e);
   }
 
   return "";
