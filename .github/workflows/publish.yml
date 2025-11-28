@@ -46,12 +46,18 @@ jobs:
         run: |
           aptos node run-local-testnet --with-faucet --force-restart > /tmp/localnet.log 2>&1 &
           echo "⏳ Waiting for localnet to start..."
-          timeout 60 bash -c 'until curl -s http://localhost:8080/v1 > /dev/null 2>&1; do sleep 2; done'
+          timeout 120 bash -c 'until curl -s http://localhost:8080/v1 > /dev/null 2>&1; do sleep 2; done'
+          echo "⏳ Waiting for DB to bootstrap..."
+          sleep 10
           echo "✅ Localnet is ready"
 
       - name: Initialize Aptos CLI profile
         run: |
-          echo -e "\n\n" | aptos init --network local --profile default
+          for i in {1..5}; do
+            echo -e "\n\n" | aptos init --network local --profile default && break
+            echo "Retry $i/5..."
+            sleep 5
+          done
 
       - name: Deploy contracts to localnet
         run: just localnet-deploy
