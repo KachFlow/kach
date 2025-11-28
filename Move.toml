@@ -5,9 +5,6 @@ version = "0.1.0"
 [addresses]
 kach = "_"
 
-[dev-addresses]
-kach = "0xC"
-
 [dependencies.AptosFramework]
 git    = "https://github.com/aptos-labs/aptos-framework.git"
 rev    = "mainnet"
