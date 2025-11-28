@@ -558,4 +558,3 @@ module kach::prt {
         prt_data.borrower_address
     }
 }
-

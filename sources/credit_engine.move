@@ -772,4 +772,3 @@ module kach::credit_engine {
             / (credit_line.max_outstanding as u128) as u64)
     }
 }
-

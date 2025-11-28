@@ -872,4 +872,3 @@ module kach::attestator {
         MIN_ATTESTATOR_STAKE
     }
 }
-

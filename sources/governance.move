@@ -41,83 +41,83 @@ module kach::governance {
         emergency_responders: vector<address>,
 
         // Protocol parameters
-        protocol_fee_bps: u64,           // Default protocol fee (e.g., 500 = 5%)
-        max_utilization_bps: u64,        // Default max utilization (e.g., 8000 = 80%)
-        min_lock_duration_seconds: u64,  // Minimum position lock time
-        max_lock_duration_seconds: u64,  // Maximum position lock time
+        protocol_fee_bps: u64, // Default protocol fee (e.g., 500 = 5%)
+        max_utilization_bps: u64, // Default max utilization (e.g., 8000 = 80%)
+        min_lock_duration_seconds: u64, // Minimum position lock time
+        max_lock_duration_seconds: u64, // Maximum position lock time
 
         // Credit engine parameters
-        min_trust_score_threshold: u64,  // Minimum trust score to draw credit
-        default_tenor_seconds: u64,      // Default loan tenor
+        min_trust_score_threshold: u64, // Minimum trust score to draw credit
+        default_tenor_seconds: u64, // Default loan tenor
 
         // Yield distribution parameters
-        base_risk_premium_bps: u64,      // Base risk premium for dynamic yield calculation (e.g., 3000 = 30% = 0.3)
+        base_risk_premium_bps: u64, // Base risk premium for dynamic yield calculation (e.g., 3000 = 30% = 0.3)
 
         // Trust score parameters
-        trust_power_bps: u64,            // Power for per-loan weighting (e.g., 8000 = 0.8 for concave)
-        trust_w_late_bps: u64,           // Severity multiplier for late payments (e.g., 20000 = 2.0×)
-        trust_w_default_bps: u64,        // Severity multiplier for defaults (e.g., 50000 = 5.0×)
-        trust_decay_factor_bps: u64,     // Decay factor per interval (e.g., 9500 = 0.95)
+        trust_power_bps: u64, // Power for per-loan weighting (e.g., 8000 = 0.8 for concave)
+        trust_w_late_bps: u64, // Severity multiplier for late payments (e.g., 20000 = 2.0×)
+        trust_w_default_bps: u64, // Severity multiplier for defaults (e.g., 50000 = 5.0×)
+        trust_decay_factor_bps: u64, // Decay factor per interval (e.g., 9500 = 0.95)
         trust_decay_interval_seconds: u64, // Decay interval in seconds (e.g., 2592000 = 30 days)
-        trust_volume_weight_bps: u64,    // Weight for volume score vs count (e.g., 7000 = 70% volume, 30% count)
-        trust_confidence_divisor: u64,   // Confidence scaling divisor (e.g., 50 loans for 1.0 bonus)
-        trust_anti_gaming_k_bps: u64,    // Anti-gaming multiplier k (e.g., 15000 = 1.5×)
+        trust_volume_weight_bps: u64, // Weight for volume score vs count (e.g., 7000 = 70% volume, 30% count)
+        trust_confidence_divisor: u64, // Confidence scaling divisor (e.g., 50 loans for 1.0 bonus)
+        trust_anti_gaming_k_bps: u64, // Anti-gaming multiplier k (e.g., 15000 = 1.5×)
 
         // Emergency controls
         global_pause: bool,
 
         // Timestamps
         created_at: u64,
-        last_updated: u64,
+        last_updated: u64
     }
 
     /// Events
     #[event]
     struct GovernanceInitialized has drop, store {
         admin: address,
-        timestamp: u64,
+        timestamp: u64
     }
 
     #[event]
     struct AdminAdded has drop, store {
         admin: address,
         added_by: address,
-        timestamp: u64,
+        timestamp: u64
     }
 
     #[event]
     struct AdminRemoved has drop, store {
         admin: address,
         removed_by: address,
-        timestamp: u64,
+        timestamp: u64
     }
 
     #[event]
     struct OperatorAdded has drop, store {
         operator: address,
         added_by: address,
-        timestamp: u64,
+        timestamp: u64
     }
 
     #[event]
     struct OperatorRemoved has drop, store {
         operator: address,
         removed_by: address,
-        timestamp: u64,
+        timestamp: u64
     }
 
     #[event]
     struct EmergencyResponderAdded has drop, store {
         responder: address,
         added_by: address,
-        timestamp: u64,
+        timestamp: u64
     }
 
     #[event]
     struct EmergencyResponderRemoved has drop, store {
         responder: address,
         removed_by: address,
-        timestamp: u64,
+        timestamp: u64
     }
 
     #[event]
@@ -126,14 +126,14 @@ module kach::governance {
         old_value: u64,
         new_value: u64,
         updated_by: address,
-        timestamp: u64,
+        timestamp: u64
     }
 
     #[event]
     struct GlobalPauseToggled has drop, store {
         is_paused: bool,
         toggled_by: address,
-        timestamp: u64,
+        timestamp: u64
     }
 
     /// Initialize governance (called once at deployment)
@@ -153,7 +153,7 @@ module kach::governance {
         trust_decay_interval_seconds: u64,
         trust_volume_weight_bps: u64,
         trust_confidence_divisor: u64,
-        trust_anti_gaming_k_bps: u64,
+        trust_anti_gaming_k_bps: u64
     ) {
         let deployer_addr = signer::address_of(deployer);
 
@@ -163,7 +163,9 @@ module kach::governance {
         assert!(protocol_fee_bps <= 10000, E_INVALID_PARAMETER);
         assert!(max_utilization_bps <= 10000, E_INVALID_PARAMETER);
         assert!(min_lock_duration_seconds > 0, E_INVALID_PARAMETER);
-        assert!(max_lock_duration_seconds >= min_lock_duration_seconds, E_INVALID_PARAMETER);
+        assert!(
+            max_lock_duration_seconds >= min_lock_duration_seconds, E_INVALID_PARAMETER
+        );
         assert!(min_trust_score_threshold <= 100, E_INVALID_PARAMETER);
         assert!(default_tenor_seconds > 0, E_INVALID_PARAMETER);
         assert!(base_risk_premium_bps <= 10000, E_INVALID_PARAMETER); // Max 100%
@@ -195,22 +197,24 @@ module kach::governance {
             trust_anti_gaming_k_bps,
             global_pause: false,
             created_at: timestamp::now_seconds(),
-            last_updated: timestamp::now_seconds(),
+            last_updated: timestamp::now_seconds()
         };
 
         move_to(deployer, config);
 
-        event::emit(GovernanceInitialized {
-            admin: deployer_addr,
-            timestamp: timestamp::now_seconds(),
-        });
+        event::emit(
+            GovernanceInitialized {
+                admin: deployer_addr,
+                timestamp: timestamp::now_seconds()
+            }
+        );
     }
 
     /// Add a new admin (requires existing admin)
     public entry fun add_admin(
         admin: &signer,
         new_admin: address,
-        governance_addr: address,
+        governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -226,18 +230,20 @@ module kach::governance {
         vector::push_back(&mut config.admins, new_admin);
         config.last_updated = timestamp::now_seconds();
 
-        event::emit(AdminAdded {
-            admin: new_admin,
-            added_by: admin_addr,
-            timestamp: timestamp::now_seconds(),
-        });
+        event::emit(
+            AdminAdded {
+                admin: new_admin,
+                added_by: admin_addr,
+                timestamp: timestamp::now_seconds()
+            }
+        );
     }
 
     /// Remove an admin (requires existing admin, cannot remove last admin)
     public entry fun remove_admin(
         admin: &signer,
         admin_to_remove: address,
-        governance_addr: address,
+        governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -257,18 +263,20 @@ module kach::governance {
         vector::remove(&mut config.admins, index);
         config.last_updated = timestamp::now_seconds();
 
-        event::emit(AdminRemoved {
-            admin: admin_to_remove,
-            removed_by: admin_addr,
-            timestamp: timestamp::now_seconds(),
-        });
+        event::emit(
+            AdminRemoved {
+                admin: admin_to_remove,
+                removed_by: admin_addr,
+                timestamp: timestamp::now_seconds()
+            }
+        );
     }
 
     /// Add operator
     public entry fun add_operator(
         admin: &signer,
         new_operator: address,
-        governance_addr: address,
+        governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -276,23 +284,27 @@ module kach::governance {
         let config = borrow_global_mut<GovernanceConfig>(governance_addr);
 
         assert!(is_admin_internal(&config.admins, admin_addr), E_NOT_AUTHORIZED);
-        assert!(!is_operator_internal(&config.operators, new_operator), E_ALREADY_OPERATOR);
+        assert!(
+            !is_operator_internal(&config.operators, new_operator), E_ALREADY_OPERATOR
+        );
 
         vector::push_back(&mut config.operators, new_operator);
         config.last_updated = timestamp::now_seconds();
 
-        event::emit(OperatorAdded {
-            operator: new_operator,
-            added_by: admin_addr,
-            timestamp: timestamp::now_seconds(),
-        });
+        event::emit(
+            OperatorAdded {
+                operator: new_operator,
+                added_by: admin_addr,
+                timestamp: timestamp::now_seconds()
+            }
+        );
     }
 
     /// Remove operator
     public entry fun remove_operator(
         admin: &signer,
         operator_to_remove: address,
-        governance_addr: address,
+        governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -307,18 +319,20 @@ module kach::governance {
         vector::remove(&mut config.operators, index);
         config.last_updated = timestamp::now_seconds();
 
-        event::emit(OperatorRemoved {
-            operator: operator_to_remove,
-            removed_by: admin_addr,
-            timestamp: timestamp::now_seconds(),
-        });
+        event::emit(
+            OperatorRemoved {
+                operator: operator_to_remove,
+                removed_by: admin_addr,
+                timestamp: timestamp::now_seconds()
+            }
+        );
     }
 
     /// Add emergency responder
     public entry fun add_emergency_responder(
         admin: &signer,
         new_responder: address,
-        governance_addr: address,
+        governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -330,18 +344,20 @@ module kach::governance {
         vector::push_back(&mut config.emergency_responders, new_responder);
         config.last_updated = timestamp::now_seconds();
 
-        event::emit(EmergencyResponderAdded {
-            responder: new_responder,
-            added_by: admin_addr,
-            timestamp: timestamp::now_seconds(),
-        });
+        event::emit(
+            EmergencyResponderAdded {
+                responder: new_responder,
+                added_by: admin_addr,
+                timestamp: timestamp::now_seconds()
+            }
+        );
     }
 
     /// Remove emergency responder
     public entry fun remove_emergency_responder(
         admin: &signer,
         responder_to_remove: address,
-        governance_addr: address,
+        governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -350,24 +366,28 @@ module kach::governance {
 
         assert!(is_admin_internal(&config.admins, admin_addr), E_NOT_AUTHORIZED);
 
-        let (found, index) = vector::index_of(&config.emergency_responders, &responder_to_remove);
+        let (found, index) = vector::index_of(
+            &config.emergency_responders, &responder_to_remove
+        );
         assert!(found, E_NOT_AUTHORIZED);
 
         vector::remove(&mut config.emergency_responders, index);
         config.last_updated = timestamp::now_seconds();
 
-        event::emit(EmergencyResponderRemoved {
-            responder: responder_to_remove,
-            removed_by: admin_addr,
-            timestamp: timestamp::now_seconds(),
-        });
+        event::emit(
+            EmergencyResponderRemoved {
+                responder: responder_to_remove,
+                removed_by: admin_addr,
+                timestamp: timestamp::now_seconds()
+            }
+        );
     }
 
     /// Update protocol fee (admin only)
     public entry fun update_protocol_fee_bps(
         admin: &signer,
         new_fee_bps: u64,
-        governance_addr: address,
+        governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -381,20 +401,22 @@ module kach::governance {
         config.protocol_fee_bps = new_fee_bps;
         config.last_updated = timestamp::now_seconds();
 
-        event::emit(ParameterUpdated {
-            parameter_name: b"protocol_fee_bps",
-            old_value,
-            new_value: new_fee_bps,
-            updated_by: admin_addr,
-            timestamp: timestamp::now_seconds(),
-        });
+        event::emit(
+            ParameterUpdated {
+                parameter_name: b"protocol_fee_bps",
+                old_value,
+                new_value: new_fee_bps,
+                updated_by: admin_addr,
+                timestamp: timestamp::now_seconds()
+            }
+        );
     }
 
     /// Update max utilization (admin only)
     public entry fun update_max_utilization_bps(
         admin: &signer,
         new_max_bps: u64,
-        governance_addr: address,
+        governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -408,20 +430,22 @@ module kach::governance {
         config.max_utilization_bps = new_max_bps;
         config.last_updated = timestamp::now_seconds();
 
-        event::emit(ParameterUpdated {
-            parameter_name: b"max_utilization_bps",
-            old_value,
-            new_value: new_max_bps,
-            updated_by: admin_addr,
-            timestamp: timestamp::now_seconds(),
-        });
+        event::emit(
+            ParameterUpdated {
+                parameter_name: b"max_utilization_bps",
+                old_value,
+                new_value: new_max_bps,
+                updated_by: admin_addr,
+                timestamp: timestamp::now_seconds()
+            }
+        );
     }
 
     /// Update minimum trust score threshold (admin only)
     public entry fun update_min_trust_score(
         admin: &signer,
         new_threshold: u64,
-        governance_addr: address,
+        governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -435,20 +459,22 @@ module kach::governance {
         config.min_trust_score_threshold = new_threshold;
         config.last_updated = timestamp::now_seconds();
 
-        event::emit(ParameterUpdated {
-            parameter_name: b"min_trust_score_threshold",
-            old_value,
-            new_value: new_threshold,
-            updated_by: admin_addr,
-            timestamp: timestamp::now_seconds(),
-        });
+        event::emit(
+            ParameterUpdated {
+                parameter_name: b"min_trust_score_threshold",
+                old_value,
+                new_value: new_threshold,
+                updated_by: admin_addr,
+                timestamp: timestamp::now_seconds()
+            }
+        );
     }
 
     /// Update base risk premium (admin only)
     public entry fun update_base_risk_premium(
         admin: &signer,
         new_premium_bps: u64,
-        governance_addr: address,
+        governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -462,19 +488,20 @@ module kach::governance {
         config.base_risk_premium_bps = new_premium_bps;
         config.last_updated = timestamp::now_seconds();
 
-        event::emit(ParameterUpdated {
-            parameter_name: b"base_risk_premium_bps",
-            old_value,
-            new_value: new_premium_bps,
-            updated_by: admin_addr,
-            timestamp: timestamp::now_seconds(),
-        });
+        event::emit(
+            ParameterUpdated {
+                parameter_name: b"base_risk_premium_bps",
+                old_value,
+                new_value: new_premium_bps,
+                updated_by: admin_addr,
+                timestamp: timestamp::now_seconds()
+            }
+        );
     }
 
     /// Toggle global pause (admin or emergency responder)
     public entry fun toggle_global_pause(
-        caller: &signer,
-        governance_addr: address,
+        caller: &signer, governance_addr: address
     ) acquires GovernanceConfig {
         let caller_addr = signer::address_of(caller);
 
@@ -489,8 +516,10 @@ module kach::governance {
         } else {
             // Pausing can be done by admin or emergency responder
             assert!(
-                is_admin_internal(&config.admins, caller_addr) ||
-                is_emergency_responder_internal(&config.emergency_responders, caller_addr),
+                is_admin_internal(&config.admins, caller_addr)
+                    || is_emergency_responder_internal(
+                        &config.emergency_responders, caller_addr
+                    ),
                 E_NOT_AUTHORIZED
             );
         };
@@ -498,11 +527,13 @@ module kach::governance {
         config.global_pause = !config.global_pause;
         config.last_updated = timestamp::now_seconds();
 
-        event::emit(GlobalPauseToggled {
-            is_paused: config.global_pause,
-            toggled_by: caller_addr,
-            timestamp: timestamp::now_seconds(),
-        });
+        event::emit(
+            GlobalPauseToggled {
+                is_paused: config.global_pause,
+                toggled_by: caller_addr,
+                timestamp: timestamp::now_seconds()
+            }
+        );
     }
 
     /// Internal helper to check if address is admin
@@ -516,7 +547,9 @@ module kach::governance {
     }
 
     /// Internal helper to check if address is emergency responder
-    fun is_emergency_responder_internal(responders: &vector<address>, addr: address): bool {
+    fun is_emergency_responder_internal(
+        responders: &vector<address>, addr: address
+    ): bool {
         vector::contains(responders, &addr)
     }
 
@@ -541,7 +574,9 @@ module kach::governance {
     }
 
     #[view]
-    public fun is_emergency_responder(governance_addr: address, addr: address): bool acquires GovernanceConfig {
+    public fun is_emergency_responder(
+        governance_addr: address, addr: address
+    ): bool acquires GovernanceConfig {
         if (!exists<GovernanceConfig>(governance_addr)) {
             return false
         };
@@ -573,14 +608,18 @@ module kach::governance {
     }
 
     #[view]
-    public fun get_min_trust_score_threshold(governance_addr: address): u64 acquires GovernanceConfig {
+    public fun get_min_trust_score_threshold(
+        governance_addr: address
+    ): u64 acquires GovernanceConfig {
         assert!(exists<GovernanceConfig>(governance_addr), E_GOVERNANCE_NOT_FOUND);
         let config = borrow_global<GovernanceConfig>(governance_addr);
         config.min_trust_score_threshold
     }
 
     #[view]
-    public fun get_lock_duration_bounds(governance_addr: address): (u64, u64) acquires GovernanceConfig {
+    public fun get_lock_duration_bounds(
+        governance_addr: address
+    ): (u64, u64) acquires GovernanceConfig {
         assert!(exists<GovernanceConfig>(governance_addr), E_GOVERNANCE_NOT_FOUND);
         let config = borrow_global<GovernanceConfig>(governance_addr);
         (config.min_lock_duration_seconds, config.max_lock_duration_seconds)
@@ -608,14 +647,18 @@ module kach::governance {
     }
 
     #[view]
-    public fun get_all_operators(governance_addr: address): vector<address> acquires GovernanceConfig {
+    public fun get_all_operators(
+        governance_addr: address
+    ): vector<address> acquires GovernanceConfig {
         assert!(exists<GovernanceConfig>(governance_addr), E_GOVERNANCE_NOT_FOUND);
         let config = borrow_global<GovernanceConfig>(governance_addr);
         config.operators
     }
 
     #[view]
-    public fun get_all_emergency_responders(governance_addr: address): vector<address> acquires GovernanceConfig {
+    public fun get_all_emergency_responders(
+        governance_addr: address
+    ): vector<address> acquires GovernanceConfig {
         assert!(exists<GovernanceConfig>(governance_addr), E_GOVERNANCE_NOT_FOUND);
         let config = borrow_global<GovernanceConfig>(governance_addr);
         config.emergency_responders
@@ -647,7 +690,9 @@ module kach::governance {
     }
 
     #[view]
-    public fun get_trust_decay_interval_seconds(governance_addr: address): u64 acquires GovernanceConfig {
+    public fun get_trust_decay_interval_seconds(
+        governance_addr: address
+    ): u64 acquires GovernanceConfig {
         assert!(exists<GovernanceConfig>(governance_addr), E_GOVERNANCE_NOT_FOUND);
         borrow_global<GovernanceConfig>(governance_addr).trust_decay_interval_seconds
     }

@@ -160,17 +160,17 @@ module kach::trust_score {
 
         // Update volumes and counts based on status
         if (status == STATUS_ON_TIME) {
-            trust_score.good_volume = trust_score.good_volume + effective_amount;
-            trust_score.on_time_count = trust_score.on_time_count + 1;
+            trust_score.good_volume += effective_amount;
+            trust_score.on_time_count += 1;
         } else if (status == STATUS_LATE) {
-            trust_score.late_volume = trust_score.late_volume + effective_amount;
-            trust_score.late_count = trust_score.late_count + 1;
+            trust_score.late_volume += effective_amount;
+            trust_score.late_count += 1;
         } else if (status == STATUS_DEFAULT) {
-            trust_score.default_volume = trust_score.default_volume + effective_amount;
-            trust_score.default_count = trust_score.default_count + 1;
+            trust_score.default_volume += effective_amount;
+            trust_score.default_count += 1;
         };
 
-        trust_score.total_loans = trust_score.total_loans + 1;
+        trust_score.total_loans += 1;
         trust_score.last_update = timestamp::now_seconds();
 
         let new_score = calculate_trust_score_internal(trust_score, governance_address);
@@ -218,7 +218,7 @@ module kach::trust_score {
                     (trust_score.late_volume * (decay_factor_bps as u128)) / 10000;
                 trust_score.default_volume =
                     (trust_score.default_volume * (decay_factor_bps as u128)) / 10000;
-                i = i + 1;
+                i += 1;
             };
         };
     }

@@ -62,9 +62,7 @@ module kach::tranche {
     /// - Senior multiplier = 1.0 - (junior_ratio × base_risk_premium)
     /// - Protocol fee: 7% of gross interest
     public fun distribute_yield<FA>(
-        pool_address: address,
-        total_interest: u64,
-        governance_address: address
+        pool_address: address, total_interest: u64, governance_address: address
     ) {
         // Calculate protocol reserve share (7% per documentation)
         let protocol_share = (total_interest as u128) * (PROTOCOL_FEE_BPS as u128) / 10000;
@@ -77,11 +75,16 @@ module kach::tranche {
         let tranche_yield = total_interest - protocol_share_u64;
 
         // Get actual tranche deposits
-        let senior_deposits = pool::get_tranche_deposits<FA>(pool_address, TRANCHE_SENIOR);
-        let junior_deposits = pool::get_tranche_deposits<FA>(pool_address, TRANCHE_JUNIOR);
+        let senior_deposits = pool::get_tranche_deposits<FA>(
+            pool_address, TRANCHE_SENIOR
+        );
+        let junior_deposits = pool::get_tranche_deposits<FA>(
+            pool_address, TRANCHE_JUNIOR
+        );
 
         // Get base risk premium from governance (e.g., 3000 bps = 30% = 0.3)
-        let base_risk_premium_bps = governance::get_base_risk_premium_bps(governance_address);
+        let base_risk_premium_bps =
+            governance::get_base_risk_premium_bps(governance_address);
 
         // Calculate dynamic multipliers based on pool composition
         // Protection ratio = how many dollars of senior each junior dollar protects
@@ -108,23 +111,29 @@ module kach::tranche {
             // Using scaled math to avoid decimals: multiply by 10000 for precision
 
             // protection_ratio = senior / junior (scaled by 10000)
-            let protection_ratio_scaled = (senior_deposits as u128) * 10000 / (junior_deposits as u128);
+            let protection_ratio_scaled =
+                (senior_deposits as u128) * 10000 / (junior_deposits as u128);
 
             // junior_multiplier = 1.0 + (protection_ratio × base_risk_premium)
             // = 10000 + (protection_ratio_scaled × base_risk_premium_bps / 10000)
-            let junior_multiplier = 10000 + (protection_ratio_scaled * (base_risk_premium_bps as u128) / 10000);
+            let junior_multiplier =
+                10000
+                    + (protection_ratio_scaled * (base_risk_premium_bps as u128) / 10000);
 
             // inverse_ratio = junior / senior (scaled by 10000)
-            let inverse_ratio_scaled = (junior_deposits as u128) * 10000 / (senior_deposits as u128);
+            let inverse_ratio_scaled =
+                (junior_deposits as u128) * 10000 / (senior_deposits as u128);
 
             // senior_multiplier = 1.0 - (inverse_ratio × base_risk_premium)
             // = 10000 - (inverse_ratio_scaled × base_risk_premium_bps / 10000)
-            let senior_multiplier_calc = (inverse_ratio_scaled * (base_risk_premium_bps as u128) / 10000);
-            let senior_multiplier = if (10000 > senior_multiplier_calc) {
-                10000 - senior_multiplier_calc
-            } else {
-                1 // Minimum 0.0001× to avoid zero division
-            };
+            let senior_multiplier_calc =
+                (inverse_ratio_scaled * (base_risk_premium_bps as u128) / 10000);
+            let senior_multiplier =
+                if (10000 > senior_multiplier_calc) {
+                    10000 - senior_multiplier_calc
+                } else {
+                    1 // Minimum 0.0001× to avoid zero division
+                };
 
             // Calculate weighted capital (scaled by 10000)
             let senior_weight = (senior_deposits as u128) * senior_multiplier;
@@ -137,17 +146,9 @@ module kach::tranche {
         };
 
         // Update NAV multipliers for each tranche
-        update_nav_for_yield<FA>(
-            pool_address,
-            TRANCHE_SENIOR,
-            senior_share
-        );
+        update_nav_for_yield<FA>(pool_address, TRANCHE_SENIOR, senior_share);
 
-        update_nav_for_yield<FA>(
-            pool_address,
-            TRANCHE_JUNIOR,
-            junior_share
-        );
+        update_nav_for_yield<FA>(pool_address, TRANCHE_JUNIOR, junior_share);
 
         event::emit(
             YieldDistributed {
@@ -325,12 +326,16 @@ module kach::tranche {
     /// Example: If senior multiplier is 0.925, returns 9250
     #[view]
     public fun calculate_current_multipliers<FA>(
-        pool_address: address,
-        governance_address: address
+        pool_address: address, governance_address: address
     ): (u64, u64) {
-        let senior_deposits = pool::get_tranche_deposits<FA>(pool_address, TRANCHE_SENIOR);
-        let junior_deposits = pool::get_tranche_deposits<FA>(pool_address, TRANCHE_JUNIOR);
-        let base_risk_premium_bps = governance::get_base_risk_premium_bps(governance_address);
+        let senior_deposits = pool::get_tranche_deposits<FA>(
+            pool_address, TRANCHE_SENIOR
+        );
+        let junior_deposits = pool::get_tranche_deposits<FA>(
+            pool_address, TRANCHE_JUNIOR
+        );
+        let base_risk_premium_bps =
+            governance::get_base_risk_premium_bps(governance_address);
 
         if (junior_deposits == 0) {
             return (10000, 0) // Senior gets 1.0×, junior N/A
@@ -341,21 +346,24 @@ module kach::tranche {
         };
 
         // protection_ratio = senior / junior (scaled by 10000)
-        let protection_ratio_scaled = (senior_deposits as u128) * 10000 / (junior_deposits as u128);
+        let protection_ratio_scaled =
+            (senior_deposits as u128) * 10000 / (junior_deposits as u128);
 
         // junior_multiplier = 1.0 + (protection_ratio × base_risk_premium)
-        let junior_multiplier = 10000 + (protection_ratio_scaled * (base_risk_premium_bps as u128) / 10000);
+        let junior_multiplier =
+            10000 + (protection_ratio_scaled * (base_risk_premium_bps as u128) / 10000);
 
         // inverse_ratio = junior / senior (scaled by 10000)
-        let inverse_ratio_scaled = (junior_deposits as u128) * 10000 / (senior_deposits as u128);
+        let inverse_ratio_scaled = (junior_deposits as u128) * 10000
+            / (senior_deposits as u128);
 
         // senior_multiplier = 1.0 - (inverse_ratio × base_risk_premium)
-        let senior_multiplier_calc = (inverse_ratio_scaled * (base_risk_premium_bps as u128) / 10000);
-        let senior_multiplier = if (10000 > senior_multiplier_calc) {
-            10000 - senior_multiplier_calc
-        } else {
-            1
-        };
+        let senior_multiplier_calc =
+            (inverse_ratio_scaled * (base_risk_premium_bps as u128) / 10000);
+        let senior_multiplier =
+            if (10000 > senior_multiplier_calc) {
+                10000 - senior_multiplier_calc
+            } else { 1 };
 
         ((senior_multiplier as u64), (junior_multiplier as u64))
     }
