@@ -1,41 +1,36 @@
-#!/usr/bin/env tsx
-/**
- * Fetch ABI from deployed Kach contracts
- *
- * Usage:
- *   # From localnet (default)
- *   npm run abi:fetch
- *
- *   # From custom network
- *   NETWORK=testnet MODULE_ADDRESS=0x123... npm run abi:fetch
- *
- *   # From custom fullnode
- *   FULLNODE_URL=http://localhost:8080 MODULE_ADDRESS=0x123... npm run abi:fetch
- */
+#!/usr/bin/env bun
+
+import fs from "node:fs";
+import path from "node:path";
 
 import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
-import fs from "fs";
-import path from "path";
 
 // Configuration from environment
 const NETWORK = (process.env.NETWORK as Network) || Network.LOCAL;
 const FULLNODE_URL = process.env.FULLNODE_URL;
+const ADDRESS_REGEX = /account:\s*([a-fA-F0-9x]+)/;
 const MODULE_ADDRESS = process.env.MODULE_ADDRESS || getDefaultAddress();
 
 function getDefaultAddress(): string {
   // Try to read from .aptos/config.yaml default profile
+  // Handle both running from root and from sdk/ directory
   try {
-    const configPath = path.join(process.cwd(), ".aptos", "config.yaml");
-    if (fs.existsSync(configPath)) {
-      const config = fs.readFileSync(configPath, "utf-8");
-      // Simple regex to extract default profile address
-      const match = config.match(/account:\s*([a-fA-F0-9x]+)/);
-      if (match) {
-        return match[1];
+    const possiblePaths = [
+      path.join(process.cwd(), "..", ".aptos", "config.yaml"), // Running from sdk/
+      path.join(process.cwd(), ".aptos", "config.yaml"), // Running from root
+    ];
+
+    for (const configPath of possiblePaths) {
+      if (fs.existsSync(configPath)) {
+        const config = fs.readFileSync(configPath, "utf-8");
+        const match = config.match(ADDRESS_REGEX);
+        if (match) {
+          return match[1];
+        }
       }
     }
   } catch (e) {
-    // Ignore errors, will prompt user
+    console.error("Error reading config:", e);
   }
 
   return "";
@@ -74,9 +69,9 @@ async function fetchABI() {
 
     // List modules found
     console.log("📦 Modules:");
-    modules.forEach((module) => {
+    for (const module of modules) {
       console.log(`   - ${module.abi?.name}`);
-    });
+    }
     console.log();
 
     // Extract ABIs
@@ -90,11 +85,11 @@ async function fetchABI() {
 
 export const KACH_MODULE_ADDRESS = "${MODULE_ADDRESS}" as const;
 
-export const KACH_ABI = ${JSON.stringify(abis, null, 2)} as const;
+export const KACH_ABI = ${JSON.stringify(abis, null, 2)};
 `;
 
     // Ensure generated directory exists
-    const generatedDir = path.join(process.cwd(), "sdk", "src", "generated");
+    const generatedDir = path.join(process.cwd(), "generated");
     if (!fs.existsSync(generatedDir)) {
       fs.mkdirSync(generatedDir, { recursive: true });
     }
@@ -109,7 +104,6 @@ export const KACH_ABI = ${JSON.stringify(abis, null, 2)} as const;
     console.log("   cd sdk");
     console.log("   bun install");
     console.log("   bun run build");
-
   } catch (error) {
     console.error("\n❌ Error fetching ABI:");
     if (error instanceof Error) {

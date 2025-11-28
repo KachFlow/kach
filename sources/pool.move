@@ -399,4 +399,3 @@ module kach::pool {
         (symbol, name)
     }
 }
-

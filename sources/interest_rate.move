@@ -223,4 +223,3 @@ module kach::interest_rate {
         TENOR_90_DAYS
     }
 }
-

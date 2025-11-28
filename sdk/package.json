@@ -1,0 +1,46 @@
+{
+  "name": "@kachflow/sdk",
+  "version": "0.1.0",
+  "description": "Type-safe TypeScript SDK for Kach Protocol",
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "types": "./dist/index.d.mts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "aptos",
+    "move",
+    "defi",
+    "lending",
+    "kach"
+  ],
+  "author": "Kach Protocol",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KachFlow/kach",
+    "directory": "sdk"
+  },
+  "dependencies": {
+    "@thalalabs/surf": "^1.9.7"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "tsdown": "^0.17.0-beta.1",
+    "typescript": "^5.9.3"
+  },
+  "peerDependencies": {
+    "@aptos-labs/ts-sdk": "^5.1.5"
+  }
+}

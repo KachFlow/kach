@@ -428,4 +428,3 @@ module kach::position_nft {
         (pool_addr, tranche, shares)
     }
 }
-

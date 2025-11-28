@@ -1,0 +1,18 @@
+{
+  "private": true,
+  "workspaces": [
+    "docs",
+    "sdk"
+  ],
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.6",
+    "@changesets/cli": "^2.29.8",
+    "ultracite": "^6.3.4",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "changeset publish"
+  }
+}
