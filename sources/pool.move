@@ -6,7 +6,6 @@ module kach::pool {
     use aptos_framework::primary_fungible_store;
     use aptos_framework::event;
     use aptos_framework::timestamp;
-    use kach::constants;
 
     // Friend modules that can call internal functions
     friend kach::tranche;
@@ -22,6 +21,14 @@ module kach::pool {
     const E_INSUFFICIENT_LIQUIDITY: u64 = 3;
     /// Error when an action would push utilization above the configured maximum.
     const E_UTILIZATION_TOO_HIGH: u64 = 4;
+
+    // ===== Tranche Identifiers =====
+
+    /// Identifier for the senior tranche
+    const TRANCHE_SENIOR: u8 = 0;
+
+    /// Identifier for the junior tranche
+    const TRANCHE_JUNIOR: u8 = 1;
 
     /// Pool configuration and state for a specific fungible asset
     /// FA is phantom type representing the asset (e.g., USDC, USDT)
@@ -47,17 +54,14 @@ module kach::pool {
 
         // Protocol reserve
         protocol_reserve_balance: u64,
-        protocol_fee_bps: u64, // % of interest to reserve (e.g., 500 = 5%)
+        protocol_fee_bps: u64, // % of interest to reserve (e.g., 700 = 7%)
 
         // Counters
         total_position_nfts_minted: u64,
         total_prts_minted: u64,
 
         // State
-        is_paused: bool,
-
-        // Admin
-        admin_address: address
+        is_paused: bool
     }
 
     /// Events
@@ -110,10 +114,19 @@ module kach::pool {
         admin: &signer,
         fa_metadata: Object<Metadata>,
         max_utilization_bps: u64,
-        protocol_fee_bps: u64
+        protocol_fee_bps: u64,
+        governance_address: address
     ) {
         use aptos_framework::fungible_asset;
+        use kach::governance;
+
         let admin_addr = signer::address_of(admin);
+
+        // Check permission to create pool
+        assert!(
+            governance::can_create_pool(governance_address, admin_addr),
+            E_NOT_AUTHORIZED
+        );
 
         let pool = Pool<FA> {
             fa_metadata,
@@ -128,8 +141,7 @@ module kach::pool {
             protocol_fee_bps,
             total_position_nfts_minted: 0,
             total_prts_minted: 0,
-            is_paused: false,
-            admin_address: admin_addr
+            is_paused: false
         };
 
         move_to(admin, pool);
@@ -148,6 +160,16 @@ module kach::pool {
                 timestamp: timestamp::now_seconds()
             }
         );
+    }
+
+    /// Get the senior tranche identifier
+    public fun tranche_senior(): u8 {
+        TRANCHE_SENIOR
+    }
+
+    /// Get the junior tranche identifier
+    public fun tranche_junior(): u8 {
+        TRANCHE_JUNIOR
     }
 
     /// Get current pool utilization in basis points
@@ -179,16 +201,40 @@ module kach::pool {
     }
 
     /// Pause pool (emergency only)
-    public entry fun pause_pool<FA>(admin: &signer, pool_addr: address) acquires Pool {
+    /// Can be called by admins or emergency responders
+    public entry fun pause_pool<FA>(
+        caller: &signer, pool_addr: address, governance_address: address
+    ) acquires Pool {
+        use kach::governance;
+
+        let caller_addr = signer::address_of(caller);
+
+        // Check permission to pause pool
+        assert!(
+            governance::can_pause_pool(governance_address, caller_addr),
+            E_NOT_AUTHORIZED
+        );
+
         let pool = borrow_global_mut<Pool<FA>>(pool_addr);
-        assert!(signer::address_of(admin) == pool.admin_address, E_NOT_AUTHORIZED);
         pool.is_paused = true;
     }
 
     /// Unpause pool
-    public entry fun unpause_pool<FA>(admin: &signer, pool_addr: address) acquires Pool {
+    /// Can only be called by admins (not emergency responders)
+    public entry fun unpause_pool<FA>(
+        caller: &signer, pool_addr: address, governance_address: address
+    ) acquires Pool {
+        use kach::governance;
+
+        let caller_addr = signer::address_of(caller);
+
+        // Check permission to unpause pool
+        assert!(
+            governance::can_unpause_pool(governance_address, caller_addr),
+            E_NOT_AUTHORIZED
+        );
+
         let pool = borrow_global_mut<Pool<FA>>(pool_addr);
-        assert!(signer::address_of(admin) == pool.admin_address, E_NOT_AUTHORIZED);
         pool.is_paused = false;
     }
 
@@ -197,7 +243,7 @@ module kach::pool {
     public fun get_nav_multiplier<FA>(pool_addr: address, tranche: u8): u128 acquires Pool {
         let pool = borrow_global<Pool<FA>>(pool_addr);
 
-        if (tranche == constants::tranche_senior()) {
+        if (tranche == TRANCHE_SENIOR) {
             pool.senior_nav_multiplier
         } else {
             pool.junior_nav_multiplier
@@ -224,9 +270,9 @@ module kach::pool {
     ) acquires Pool {
         let pool = borrow_global_mut<Pool<FA>>(pool_addr);
 
-        if (tranche == constants::tranche_senior()) {
+        if (tranche == TRANCHE_SENIOR) {
             pool.senior_nav_multiplier = new_multiplier;
-        } else if (tranche == constants::tranche_junior()) {
+        } else if (tranche == TRANCHE_JUNIOR) {
             pool.junior_nav_multiplier = new_multiplier;
         }
     }
@@ -258,7 +304,7 @@ module kach::pool {
         if (is_deposit) {
             pool.total_deposits += amount;
 
-            if (tranche == constants::tranche_senior()) {
+            if (tranche == TRANCHE_SENIOR) {
                 pool.senior_deposits += amount;
             } else {
                 pool.junior_deposits += amount;
@@ -266,7 +312,7 @@ module kach::pool {
         } else {
             pool.total_deposits -= amount;
 
-            if (tranche == constants::tranche_senior()) {
+            if (tranche == TRANCHE_SENIOR) {
                 pool.senior_deposits -= amount;
             } else {
                 pool.junior_deposits -= amount;
@@ -338,7 +384,7 @@ module kach::pool {
     public fun get_tranche_deposits<FA>(pool_addr: address, tranche: u8): u64 acquires Pool {
         let pool = borrow_global<Pool<FA>>(pool_addr);
 
-        if (tranche == constants::tranche_senior()) {
+        if (tranche == TRANCHE_SENIOR) {
             pool.senior_deposits
         } else {
             pool.junior_deposits
@@ -376,3 +422,4 @@ module kach::pool {
         (symbol, name)
     }
 }
+

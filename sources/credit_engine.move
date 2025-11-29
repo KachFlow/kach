@@ -11,7 +11,6 @@ module kach::credit_engine {
     use kach::trust_score;
     use kach::attestator::{Self, Attestation};
     use kach::interest_rate;
-    use kach::constants;
 
     /// Error when caller is not authorized to mutate the credit engine state.
     const E_NOT_AUTHORIZED: u64 = 1;
@@ -143,7 +142,8 @@ module kach::credit_engine {
         max_outstanding: u64,
         escrow_amount: u64,
         default_tenor_seconds: u64,
-        default_interest_rate_bps: u64
+        default_interest_rate_bps: u64,
+        governance_address: address
     ) acquires CreditLineRegistry {
         let admin_addr = signer::address_of(admin);
 
@@ -157,8 +157,14 @@ module kach::credit_engine {
             E_CREDIT_LINE_EXISTS
         );
 
-        // Initialize trust score for attestator
-        trust_score::initialize_trust_score(admin, attestator_address, max_outstanding);
+        // Initialize trust score for attestator in this pool
+        trust_score::initialize_trust_score(
+            admin,
+            attestator_address,
+            pool_address,
+            max_outstanding,
+            governance_address
+        );
 
         let credit_line = CreditLine<FA> {
             attestator_address,
@@ -233,9 +239,9 @@ module kach::credit_engine {
 
         // Get trust score
         let trust_score_value =
-            trust_score::get_trust_score(attestator_addr, governance_address);
+            trust_score::get_trust_score(attestator_addr, credit_line.pool_address, governance_address);
         assert!(
-            trust_score_value >= constants::min_trust_score_to_draw(),
+            trust_score_value >= trust_score::min_trust_score_to_draw(),
             E_TRUST_SCORE_TOO_LOW
         );
 
@@ -333,9 +339,9 @@ module kach::credit_engine {
 
         // STRICT trust score check for prefund (>= 95)
         let trust_score_value =
-            trust_score::get_trust_score(attestator_addr, governance_address);
+            trust_score::get_trust_score(attestator_addr, credit_line.pool_address, governance_address);
         assert!(
-            trust_score_value >= constants::min_trust_score_for_prefund(),
+            trust_score_value >= trust_score::min_trust_score_for_prefund(),
             E_TRUST_SCORE_TOO_LOW
         );
 
@@ -492,6 +498,7 @@ module kach::credit_engine {
             else { 1u8 }; // STATUS_ON_TIME or STATUS_LATE
             trust_score::update_trust_score(
                 attestator_addr,
+                credit_line.pool_address,
                 original_principal,
                 status,
                 governance_address
@@ -582,6 +589,7 @@ module kach::credit_engine {
         else { 1u8 }; // STATUS_ON_TIME or STATUS_LATE
         trust_score::update_trust_score(
             attestator_addr,
+            credit_line.pool_address,
             principal,
             status,
             governance_address
@@ -678,9 +686,9 @@ module kach::credit_engine {
 
         // Verify trust score is acceptable
         let trust_score_value =
-            trust_score::get_trust_score(attestator_address, governance_address);
+            trust_score::get_trust_score(attestator_address, credit_line.pool_address, governance_address);
         assert!(
-            trust_score_value >= constants::min_trust_score_to_draw(),
+            trust_score_value >= trust_score::min_trust_score_to_draw(),
             E_TRUST_SCORE_TOO_LOW
         );
 

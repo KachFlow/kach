@@ -34,7 +34,7 @@ module kach::governance {
         emergency_responders: vector<address>,
 
         // Protocol parameters
-        protocol_fee_bps: u64, // Default protocol fee (e.g., 500 = 5%)
+        protocol_fee_bps: u64, // Default protocol fee (e.g., 700 = 7%)
         max_utilization_bps: u64, // Default max utilization (e.g., 8000 = 80%)
         min_lock_duration_seconds: u64, // Minimum position lock time
         max_lock_duration_seconds: u64, // Maximum position lock time
@@ -555,6 +555,104 @@ module kach::governance {
         is_emergency_responder_internal(&config.emergency_responders, addr)
     }
 
+    // ===== Capability-Based Permissions =====
+    // Instead of checking roles, check if an address can perform specific actions
+
+    /// Can this address pause a pool?
+    /// Allowed: admins, emergency_responders
+    #[view]
+    public fun can_pause_pool(
+        governance_addr: address, addr: address
+    ): bool acquires GovernanceConfig {
+        if (!exists<GovernanceConfig>(governance_addr)) {
+            return false
+        };
+        let config = borrow_global<GovernanceConfig>(governance_addr);
+        is_admin_internal(&config.admins, addr)
+            || is_emergency_responder_internal(&config.emergency_responders, addr)
+    }
+
+    /// Can this address unpause a pool?
+    /// Allowed: admins only (not emergency responders)
+    #[view]
+    public fun can_unpause_pool(
+        governance_addr: address, addr: address
+    ): bool acquires GovernanceConfig {
+        if (!exists<GovernanceConfig>(governance_addr)) {
+            return false
+        };
+        let config = borrow_global<GovernanceConfig>(governance_addr);
+        is_admin_internal(&config.admins, addr)
+    }
+
+    /// Can this address create a new pool?
+    /// Allowed: admins only
+    #[view]
+    public fun can_create_pool(
+        governance_addr: address, addr: address
+    ): bool acquires GovernanceConfig {
+        if (!exists<GovernanceConfig>(governance_addr)) {
+            return false
+        };
+        let config = borrow_global<GovernanceConfig>(governance_addr);
+        is_admin_internal(&config.admins, addr)
+    }
+
+    /// Can this address create credit lines?
+    /// Allowed: admins, operators
+    #[view]
+    public fun can_create_credit_line(
+        governance_addr: address, addr: address
+    ): bool acquires GovernanceConfig {
+        if (!exists<GovernanceConfig>(governance_addr)) {
+            return false
+        };
+        let config = borrow_global<GovernanceConfig>(governance_addr);
+        is_admin_internal(&config.admins, addr)
+            || is_operator_internal(&config.operators, addr)
+    }
+
+    /// Can this address update protocol parameters?
+    /// Allowed: admins only
+    #[view]
+    public fun can_update_parameters(
+        governance_addr: address, addr: address
+    ): bool acquires GovernanceConfig {
+        if (!exists<GovernanceConfig>(governance_addr)) {
+            return false
+        };
+        let config = borrow_global<GovernanceConfig>(governance_addr);
+        is_admin_internal(&config.admins, addr)
+    }
+
+    /// Can this address manage trust scores (approve/revoke attestators)?
+    /// Allowed: admins, operators
+    #[view]
+    public fun can_manage_trust_scores(
+        governance_addr: address, addr: address
+    ): bool acquires GovernanceConfig {
+        if (!exists<GovernanceConfig>(governance_addr)) {
+            return false
+        };
+        let config = borrow_global<GovernanceConfig>(governance_addr);
+        is_admin_internal(&config.admins, addr)
+            || is_operator_internal(&config.operators, addr)
+    }
+
+    /// Can this address manage attestators (create/revoke attestations)?
+    /// Allowed: admins, operators
+    #[view]
+    public fun can_manage_attestators(
+        governance_addr: address, addr: address
+    ): bool acquires GovernanceConfig {
+        if (!exists<GovernanceConfig>(governance_addr)) {
+            return false
+        };
+        let config = borrow_global<GovernanceConfig>(governance_addr);
+        is_admin_internal(&config.admins, addr)
+            || is_operator_internal(&config.operators, addr)
+    }
+
     #[view]
     public fun is_globally_paused(governance_addr: address): bool acquires GovernanceConfig {
         if (!exists<GovernanceConfig>(governance_addr)) {
@@ -685,4 +783,46 @@ module kach::governance {
         assert!(exists<GovernanceConfig>(governance_addr), E_GOVERNANCE_NOT_FOUND);
         borrow_global<GovernanceConfig>(governance_addr).trust_anti_gaming_k_bps
     }
+
+    /// Trust score decay parameters
+    #[view]
+    public fun get_trust_score_decay_rate_bps(_governance_addr: address): u64 {
+        // Default: 200 bps = 2% decay per period
+        200
+    }
+
+    #[view]
+    public fun get_trust_score_decay_period_seconds(
+        _governance_addr: address
+    ): u64 {
+        // Default: 30 days in seconds
+        2592000
+    }
+
+    /// Trust score weight parameters (sum should be 100)
+    #[view]
+    public fun get_trust_score_on_time_weight(_governance_addr: address): u64 {
+        // Default: On-time payments weighted at 100%
+        100
+    }
+
+    #[view]
+    public fun get_trust_score_late_weight(_governance_addr: address): u64 {
+        // Default: Late payments weighted at 50%
+        50
+    }
+
+    #[view]
+    public fun get_trust_score_default_weight(_governance_addr: address): u64 {
+        // Default: Defaults weighted at 150%
+        150
+    }
+
+    /// Loan multiplier for anti-gaming (max loan = multiplier * good_volume / 100)
+    #[view]
+    public fun get_trust_score_loan_multiplier(_governance_addr: address): u64 {
+        // Default: 150 (1.5x good volume)
+        150
+    }
 }
+
