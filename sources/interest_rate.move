@@ -87,7 +87,7 @@ module kach::interest_rate {
     }
 
     /// Calculate early repayment discount
-    /// When borrower repays early, they save interest on remaining days
+    /// When attestator repays early, they save interest on remaining days
     /// Plus a bonus discount as incentive
     public fun calculate_early_repayment_discount(
         repayment_amount: u64,

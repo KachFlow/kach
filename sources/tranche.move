@@ -3,11 +3,7 @@ module kach::tranche {
     use aptos_framework::timestamp;
     use kach::pool;
     use kach::governance;
-
-    /// Identifier used when referring to the senior tranche.
-    const TRANCHE_SENIOR: u8 = 0;
-    /// Identifier used when referring to the junior tranche.
-    const TRANCHE_JUNIOR: u8 = 1;
+    use kach::constants;
 
     /// Error when a caller lacks the privileges to execute tranche operations.
     const E_NOT_AUTHORIZED: u64 = 1;
@@ -15,14 +11,6 @@ module kach::tranche {
     const E_INVALID_TRANCHE: u64 = 2;
     /// Error when a tranche does not have enough capital to fulfill an action.
     const E_INSUFFICIENT_FUNDS: u64 = 3;
-
-    /// Maximum share of capital that the junior tranche can lose (basis points).
-    const JUNIOR_MAX_LOSS_BPS: u64 = 8000;
-    /// Maximum share of capital that the senior tranche can lose (basis points).
-    const SENIOR_MAX_LOSS_BPS: u64 = 2000;
-
-    /// Protocol fee percentage (7% of gross interest per documentation)
-    const PROTOCOL_FEE_BPS: u64 = 700; // 7%
 
     /// Events
     #[event]
@@ -65,7 +53,8 @@ module kach::tranche {
         pool_address: address, total_interest: u64, governance_address: address
     ) {
         // Calculate protocol reserve share (7% per documentation)
-        let protocol_share = (total_interest as u128) * (PROTOCOL_FEE_BPS as u128) / 10000;
+        let protocol_share =
+            (total_interest as u128) * (constants::protocol_fee_bps() as u128) / 10000;
         let protocol_share_u64 = (protocol_share as u64);
 
         // Add to protocol reserve
@@ -75,12 +64,10 @@ module kach::tranche {
         let tranche_yield = total_interest - protocol_share_u64;
 
         // Get actual tranche deposits
-        let senior_deposits = pool::get_tranche_deposits<FA>(
-            pool_address, TRANCHE_SENIOR
-        );
-        let junior_deposits = pool::get_tranche_deposits<FA>(
-            pool_address, TRANCHE_JUNIOR
-        );
+        let senior_deposits =
+            pool::get_tranche_deposits<FA>(pool_address, constants::tranche_senior());
+        let junior_deposits =
+            pool::get_tranche_deposits<FA>(pool_address, constants::tranche_junior());
 
         // Get base risk premium from governance (e.g., 3000 bps = 30% = 0.3)
         let base_risk_premium_bps =
@@ -146,9 +133,13 @@ module kach::tranche {
         };
 
         // Update NAV multipliers for each tranche
-        update_nav_for_yield<FA>(pool_address, TRANCHE_SENIOR, senior_share);
+        update_nav_for_yield<FA>(
+            pool_address, constants::tranche_senior(), senior_share
+        );
 
-        update_nav_for_yield<FA>(pool_address, TRANCHE_JUNIOR, junior_share);
+        update_nav_for_yield<FA>(
+            pool_address, constants::tranche_junior(), junior_share
+        );
 
         event::emit(
             YieldDistributed {
@@ -195,9 +186,9 @@ module kach::tranche {
             // Step 1: Junior tranche absorbs (up to 80% of junior deposits)
             (remaining_loss, junior_absorbed) = absorb_loss_in_tranche<FA>(
                 pool_address,
-                TRANCHE_JUNIOR,
+                constants::tranche_junior(),
                 remaining_loss,
-                JUNIOR_MAX_LOSS_BPS
+                constants::junior_max_loss_bps()
             );
         };
 
@@ -205,9 +196,9 @@ module kach::tranche {
             // Step 2: Senior tranche absorbs (up to 20% of senior deposits)
             (_, senior_absorbed) = absorb_loss_in_tranche<FA>(
                 pool_address,
-                TRANCHE_SENIOR,
+                constants::tranche_senior(),
                 remaining_loss,
-                SENIOR_MAX_LOSS_BPS
+                constants::senior_max_loss_bps()
             );
             // If still remaining loss, protocol is insolvent
             // This should trigger emergency procedures
@@ -328,12 +319,10 @@ module kach::tranche {
     public fun calculate_current_multipliers<FA>(
         pool_address: address, governance_address: address
     ): (u64, u64) {
-        let senior_deposits = pool::get_tranche_deposits<FA>(
-            pool_address, TRANCHE_SENIOR
-        );
-        let junior_deposits = pool::get_tranche_deposits<FA>(
-            pool_address, TRANCHE_JUNIOR
-        );
+        let senior_deposits =
+            pool::get_tranche_deposits<FA>(pool_address, constants::tranche_senior());
+        let junior_deposits =
+            pool::get_tranche_deposits<FA>(pool_address, constants::tranche_junior());
         let base_risk_premium_bps =
             governance::get_base_risk_premium_bps(governance_address);
 
@@ -371,17 +360,10 @@ module kach::tranche {
     /// Get max loss a tranche can absorb (in bps of tranche capital)
     #[view]
     public fun get_max_loss_bps(tranche: u8): u64 {
-        if (tranche == TRANCHE_JUNIOR) {
-            JUNIOR_MAX_LOSS_BPS
+        if (tranche == constants::tranche_junior()) {
+            constants::junior_max_loss_bps()
         } else {
-            SENIOR_MAX_LOSS_BPS
+            constants::senior_max_loss_bps()
         }
     }
-
-    /// Get protocol fee in basis points (7%)
-    #[view]
-    public fun get_protocol_fee_bps(): u64 {
-        PROTOCOL_FEE_BPS
-    }
 }
-

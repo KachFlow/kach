@@ -21,13 +21,6 @@ module kach::governance {
     /// Error when trying to mutate governance before initialization.
     const E_GOVERNANCE_NOT_FOUND: u64 = 8;
 
-    /// Role identifier for administrators.
-    const ROLE_ADMIN: u8 = 0;
-    /// Role identifier for routine operators.
-    const ROLE_OPERATOR: u8 = 1;
-    /// Role identifier for emergency responders.
-    const ROLE_EMERGENCY: u8 = 2;
-
     /// Global governance configuration
     /// Stored at protocol deployer address
     struct GovernanceConfig has key {
@@ -174,7 +167,7 @@ module kach::governance {
         assert!(trust_volume_weight_bps <= 10000, E_INVALID_PARAMETER); // Max 100%
 
         let admins = vector::empty<address>();
-        vector::push_back(&mut admins, deployer_addr);
+        admins.push_back(deployer_addr);
 
         let config = GovernanceConfig {
             admins,
@@ -212,9 +205,7 @@ module kach::governance {
 
     /// Add a new admin (requires existing admin)
     public entry fun add_admin(
-        admin: &signer,
-        new_admin: address,
-        governance_addr: address
+        admin: &signer, new_admin: address, governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -227,7 +218,7 @@ module kach::governance {
         // Verify new_admin is not already admin
         assert!(!is_admin_internal(&config.admins, new_admin), E_ALREADY_ADMIN);
 
-        vector::push_back(&mut config.admins, new_admin);
+        config.admins.push_back(new_admin);
         config.last_updated = timestamp::now_seconds();
 
         event::emit(
@@ -241,9 +232,7 @@ module kach::governance {
 
     /// Remove an admin (requires existing admin, cannot remove last admin)
     public entry fun remove_admin(
-        admin: &signer,
-        admin_to_remove: address,
-        governance_addr: address
+        admin: &signer, admin_to_remove: address, governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -254,13 +243,13 @@ module kach::governance {
         assert!(is_admin_internal(&config.admins, admin_addr), E_NOT_AUTHORIZED);
 
         // Verify not removing last admin
-        assert!(vector::length(&config.admins) > 1, E_NOT_AUTHORIZED);
+        assert!(config.admins.length() > 1, E_NOT_AUTHORIZED);
 
         // Find and remove admin
-        let (found, index) = vector::index_of(&config.admins, &admin_to_remove);
+        let (found, index) = config.admins.index_of(&admin_to_remove);
         assert!(found, E_NOT_ADMIN);
 
-        vector::remove(&mut config.admins, index);
+        config.admins.remove(index);
         config.last_updated = timestamp::now_seconds();
 
         event::emit(
@@ -274,9 +263,7 @@ module kach::governance {
 
     /// Add operator
     public entry fun add_operator(
-        admin: &signer,
-        new_operator: address,
-        governance_addr: address
+        admin: &signer, new_operator: address, governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -288,7 +275,7 @@ module kach::governance {
             !is_operator_internal(&config.operators, new_operator), E_ALREADY_OPERATOR
         );
 
-        vector::push_back(&mut config.operators, new_operator);
+        config.operators.push_back(new_operator);
         config.last_updated = timestamp::now_seconds();
 
         event::emit(
@@ -302,9 +289,7 @@ module kach::governance {
 
     /// Remove operator
     public entry fun remove_operator(
-        admin: &signer,
-        operator_to_remove: address,
-        governance_addr: address
+        admin: &signer, operator_to_remove: address, governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -313,10 +298,10 @@ module kach::governance {
 
         assert!(is_admin_internal(&config.admins, admin_addr), E_NOT_AUTHORIZED);
 
-        let (found, index) = vector::index_of(&config.operators, &operator_to_remove);
+        let (found, index) = config.operators.index_of(&operator_to_remove);
         assert!(found, E_NOT_OPERATOR);
 
-        vector::remove(&mut config.operators, index);
+        config.operators.remove(index);
         config.last_updated = timestamp::now_seconds();
 
         event::emit(
@@ -330,9 +315,7 @@ module kach::governance {
 
     /// Add emergency responder
     public entry fun add_emergency_responder(
-        admin: &signer,
-        new_responder: address,
-        governance_addr: address
+        admin: &signer, new_responder: address, governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -341,7 +324,7 @@ module kach::governance {
 
         assert!(is_admin_internal(&config.admins, admin_addr), E_NOT_AUTHORIZED);
 
-        vector::push_back(&mut config.emergency_responders, new_responder);
+        config.emergency_responders.push_back(new_responder);
         config.last_updated = timestamp::now_seconds();
 
         event::emit(
@@ -355,9 +338,7 @@ module kach::governance {
 
     /// Remove emergency responder
     public entry fun remove_emergency_responder(
-        admin: &signer,
-        responder_to_remove: address,
-        governance_addr: address
+        admin: &signer, responder_to_remove: address, governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -366,12 +347,10 @@ module kach::governance {
 
         assert!(is_admin_internal(&config.admins, admin_addr), E_NOT_AUTHORIZED);
 
-        let (found, index) = vector::index_of(
-            &config.emergency_responders, &responder_to_remove
-        );
+        let (found, index) = config.emergency_responders.index_of(&responder_to_remove);
         assert!(found, E_NOT_AUTHORIZED);
 
-        vector::remove(&mut config.emergency_responders, index);
+        config.emergency_responders.remove(index);
         config.last_updated = timestamp::now_seconds();
 
         event::emit(
@@ -385,9 +364,7 @@ module kach::governance {
 
     /// Update protocol fee (admin only)
     public entry fun update_protocol_fee_bps(
-        admin: &signer,
-        new_fee_bps: u64,
-        governance_addr: address
+        admin: &signer, new_fee_bps: u64, governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -414,9 +391,7 @@ module kach::governance {
 
     /// Update max utilization (admin only)
     public entry fun update_max_utilization_bps(
-        admin: &signer,
-        new_max_bps: u64,
-        governance_addr: address
+        admin: &signer, new_max_bps: u64, governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -443,9 +418,7 @@ module kach::governance {
 
     /// Update minimum trust score threshold (admin only)
     public entry fun update_min_trust_score(
-        admin: &signer,
-        new_threshold: u64,
-        governance_addr: address
+        admin: &signer, new_threshold: u64, governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -472,9 +445,7 @@ module kach::governance {
 
     /// Update base risk premium (admin only)
     public entry fun update_base_risk_premium(
-        admin: &signer,
-        new_premium_bps: u64,
-        governance_addr: address
+        admin: &signer, new_premium_bps: u64, governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -538,19 +509,19 @@ module kach::governance {
 
     /// Internal helper to check if address is admin
     fun is_admin_internal(admins: &vector<address>, addr: address): bool {
-        vector::contains(admins, &addr)
+        admins.contains(&addr)
     }
 
     /// Internal helper to check if address is operator
     fun is_operator_internal(operators: &vector<address>, addr: address): bool {
-        vector::contains(operators, &addr)
+        operators.contains(&addr)
     }
 
     /// Internal helper to check if address is emergency responder
     fun is_emergency_responder_internal(
         responders: &vector<address>, addr: address
     ): bool {
-        vector::contains(responders, &addr)
+        responders.contains(&addr)
     }
 
     /// Public view functions

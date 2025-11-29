@@ -3,20 +3,16 @@ module kach::trust_score {
     use aptos_framework::event;
     use aptos_framework::timestamp;
     use kach::governance;
+    use kach::constants;
 
     /// Error when a signer without admin rights attempts to mutate trust scores.
     const E_NOT_AUTHORIZED: u64 = 1;
-    /// Error when initializing a score for a borrower that already has one.
+    /// Error when initializing a score for a attestator that already has one.
     const E_TRUST_SCORE_EXISTS: u64 = 2;
     /// Error when attempting to access a non-existent trust score record.
     const E_TRUST_SCORE_NOT_FOUND: u64 = 3;
     /// Error when loan amount exceeds earned capacity (anti-gaming check).
     const E_EXCEEDS_EARNED_CAPACITY: u64 = 4;
-
-    /// Score threshold for standard credit access (with attestation).
-    const CUTOFF_SCORE_STANDARD: u64 = 60;
-    /// Score threshold for prefund access (no upfront attestation).
-    const CUTOFF_SCORE_PREFUND: u64 = 95;
 
     /// Bootstrap period: first N loans exempt from anti-gaming earned capacity check
     const BOOTSTRAP_LOAN_COUNT: u64 = 10;
@@ -32,7 +28,7 @@ module kach::trust_score {
     /// Hybrid volume-weighted Trust Score
     /// Tracks both amount-weighted volumes (with decay) and payment counts
     struct TrustScore has key {
-        borrower_address: address,
+        attestator_address: address,
 
         // Volume tracking (decayed over time, scaled by SCALE for precision)
         good_volume: u128, // Sum of on-time repayments (effective amount, decayed)
@@ -67,14 +63,14 @@ module kach::trust_score {
     /// Events
     #[event]
     struct TrustScoreInitialized has drop, store {
-        borrower: address,
+        attestator: address,
         approved_credit_limit: u64,
         timestamp: u64
     }
 
     #[event]
     struct TrustScoreUpdated has drop, store {
-        borrower: address,
+        attestator: address,
         old_score: u64,
         new_score: u64,
         status: u8, // STATUS_ON_TIME, STATUS_LATE, or STATUS_DEFAULT
@@ -84,7 +80,7 @@ module kach::trust_score {
 
     #[event]
     struct MaxLoanCapacityUpdated has drop, store {
-        borrower: address,
+        attestator: address,
         old_capacity: u64,
         new_capacity: u64,
         timestamp: u64
@@ -97,10 +93,10 @@ module kach::trust_score {
         move_to(admin, registry);
     }
 
-    /// Initialize trust score for a new borrower (admin only)
+    /// Initialize trust score for a new attestator (admin only)
     /// approved_credit_limit: initial credit limit set by admin (e.g., $1M)
     public fun initialize_trust_score(
-        admin: &signer, borrower_address: address, approved_credit_limit: u64
+        admin: &signer, attestator_address: address, approved_credit_limit: u64
     ) acquires TrustScoreRegistry {
         let admin_addr = signer::address_of(admin);
 
@@ -109,10 +105,10 @@ module kach::trust_score {
         assert!(admin_addr == registry.admin_address, E_NOT_AUTHORIZED);
 
         // Verify doesn't exist
-        assert!(!exists<TrustScore>(borrower_address), E_TRUST_SCORE_EXISTS);
+        assert!(!exists<TrustScore>(attestator_address), E_TRUST_SCORE_EXISTS);
 
         let trust_score = TrustScore {
-            borrower_address,
+            attestator_address,
             good_volume: 0,
             late_volume: 0,
             default_volume: 0,
@@ -130,7 +126,7 @@ module kach::trust_score {
 
         event::emit(
             TrustScoreInitialized {
-                borrower: borrower_address,
+                attestator: attestator_address,
                 approved_credit_limit,
                 timestamp: timestamp::now_seconds()
             }
@@ -140,13 +136,13 @@ module kach::trust_score {
     /// Update trust score based on repayment behavior
     /// Called by credit_engine or attestator when repayment occurs
     public fun update_trust_score(
-        borrower_address: address,
+        attestator_address: address,
         loan_amount: u64,
         status: u8, // STATUS_ON_TIME, STATUS_LATE, or STATUS_DEFAULT
         governance_address: address
     ) acquires TrustScore {
-        assert!(exists<TrustScore>(borrower_address), E_TRUST_SCORE_NOT_FOUND);
-        let trust_score = borrow_global_mut<TrustScore>(borrower_address);
+        assert!(exists<TrustScore>(attestator_address), E_TRUST_SCORE_NOT_FOUND);
+        let trust_score = borrow_global_mut<TrustScore>(attestator_address);
 
         let old_score = calculate_trust_score_internal(trust_score, governance_address);
 
@@ -177,7 +173,7 @@ module kach::trust_score {
 
         event::emit(
             TrustScoreUpdated {
-                borrower: borrower_address,
+                attestator: attestator_address,
                 old_score,
                 new_score,
                 status,
@@ -327,13 +323,13 @@ module kach::trust_score {
     /// After bootstrap: returns min(approved_limit, k * good_volume)
     #[view]
     public fun get_max_loan_amount(
-        borrower_address: address, governance_address: address
+        attestator_address: address, governance_address: address
     ): u64 acquires TrustScore {
-        if (!exists<TrustScore>(borrower_address)) {
+        if (!exists<TrustScore>(attestator_address)) {
             return 0
         };
 
-        let trust_score = borrow_global<TrustScore>(borrower_address);
+        let trust_score = borrow_global<TrustScore>(attestator_address);
 
         // During bootstrap period: use approved limit
         if (trust_score.total_loans < BOOTSTRAP_LOAN_COUNT) {
@@ -357,50 +353,50 @@ module kach::trust_score {
 
     /// Check if loan amount is within earned capacity (called before draw)
     public fun check_loan_capacity(
-        borrower_address: address, loan_amount: u64, governance_address: address
+        attestator_address: address, loan_amount: u64, governance_address: address
     ) acquires TrustScore {
-        let max_allowed = get_max_loan_amount(borrower_address, governance_address);
+        let max_allowed = get_max_loan_amount(attestator_address, governance_address);
         assert!(loan_amount <= max_allowed, E_EXCEEDS_EARNED_CAPACITY);
     }
 
     /// Get current trust score
     #[view]
     public fun get_trust_score(
-        borrower_address: address, governance_address: address
+        attestator_address: address, governance_address: address
     ): u64 acquires TrustScore {
-        if (!exists<TrustScore>(borrower_address)) {
+        if (!exists<TrustScore>(attestator_address)) {
             return 0
         };
 
-        let trust_score = borrow_global<TrustScore>(borrower_address);
+        let trust_score = borrow_global<TrustScore>(attestator_address);
         calculate_trust_score_internal(trust_score, governance_address)
     }
 
-    /// Check if borrower is eligible for standard credit (score >= 60)
+    /// Check if attestator is eligible for standard credit (score >= 60)
     #[view]
     public fun is_eligible_for_standard_credit(
-        borrower_address: address, governance_address: address
+        attestator_address: address, governance_address: address
     ): bool acquires TrustScore {
-        let score = get_trust_score(borrower_address, governance_address);
-        score >= CUTOFF_SCORE_STANDARD
+        let score = get_trust_score(attestator_address, governance_address);
+        score >= constants::min_trust_score_to_draw()
     }
 
-    /// Check if borrower is eligible for prefund credit (score >= 95)
+    /// Check if attestator is eligible for prefund credit (score >= 95)
     #[view]
     public fun is_eligible_for_prefund_credit(
-        borrower_address: address, governance_address: address
+        attestator_address: address, governance_address: address
     ): bool acquires TrustScore {
-        let score = get_trust_score(borrower_address, governance_address);
-        score >= CUTOFF_SCORE_PREFUND
+        let score = get_trust_score(attestator_address, governance_address);
+        score >= constants::min_trust_score_for_prefund()
     }
 
     /// Get detailed trust score breakdown
     #[view]
     public fun get_trust_score_details(
-        borrower_address: address, governance_address: address
+        attestator_address: address, governance_address: address
     ): (u64, u64, u64, u64, u64, u64, u64, u64) acquires TrustScore {
-        assert!(exists<TrustScore>(borrower_address), E_TRUST_SCORE_NOT_FOUND);
-        let trust_score = borrow_global<TrustScore>(borrower_address);
+        assert!(exists<TrustScore>(attestator_address), E_TRUST_SCORE_NOT_FOUND);
+        let trust_score = borrow_global<TrustScore>(attestator_address);
 
         let current_score =
             calculate_trust_score_internal(trust_score, governance_address);
@@ -435,9 +431,9 @@ module kach::trust_score {
 
     /// Get volume data (scaled amounts)
     #[view]
-    public fun get_volume_data(borrower_address: address): (u128, u128, u128) acquires TrustScore {
-        assert!(exists<TrustScore>(borrower_address), E_TRUST_SCORE_NOT_FOUND);
-        let trust_score = borrow_global<TrustScore>(borrower_address);
+    public fun get_volume_data(attestator_address: address): (u128, u128, u128) acquires TrustScore {
+        assert!(exists<TrustScore>(attestator_address), E_TRUST_SCORE_NOT_FOUND);
+        let trust_score = borrow_global<TrustScore>(attestator_address);
 
         (
             trust_score.good_volume / SCALE, // Return in regular units
@@ -448,7 +444,7 @@ module kach::trust_score {
 
     /// Admin function to update approved credit limit
     public entry fun update_approved_credit_limit(
-        admin: &signer, borrower_address: address, new_limit: u64
+        admin: &signer, attestator_address: address, new_limit: u64
     ) acquires TrustScore, TrustScoreRegistry {
         let admin_addr = signer::address_of(admin);
 
@@ -456,8 +452,8 @@ module kach::trust_score {
         let registry = borrow_global<TrustScoreRegistry>(admin_addr);
         assert!(admin_addr == registry.admin_address, E_NOT_AUTHORIZED);
 
-        assert!(exists<TrustScore>(borrower_address), E_TRUST_SCORE_NOT_FOUND);
-        let trust_score = borrow_global_mut<TrustScore>(borrower_address);
+        assert!(exists<TrustScore>(attestator_address), E_TRUST_SCORE_NOT_FOUND);
+        let trust_score = borrow_global_mut<TrustScore>(attestator_address);
 
         trust_score.approved_credit_limit = new_limit;
     }

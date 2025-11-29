@@ -6,17 +6,13 @@ module kach::pool {
     use aptos_framework::primary_fungible_store;
     use aptos_framework::event;
     use aptos_framework::timestamp;
+    use kach::constants;
 
     // Friend modules that can call internal functions
     friend kach::tranche;
     friend kach::credit_engine;
     friend kach::position_nft;
     friend kach::attestator;
-
-    /// Identifier used for senior tranche accounting.
-    const TRANCHE_SENIOR: u8 = 0;
-    /// Identifier used for junior tranche accounting.
-    const TRANCHE_JUNIOR: u8 = 1;
 
     /// Error when caller lacks the necessary capability to mutate the pool.
     const E_NOT_AUTHORIZED: u64 = 1;
@@ -26,8 +22,6 @@ module kach::pool {
     const E_INSUFFICIENT_LIQUIDITY: u64 = 3;
     /// Error when an action would push utilization above the configured maximum.
     const E_UTILIZATION_TOO_HIGH: u64 = 4;
-    /// Error when provided tranche allocation parameters are invalid or misaligned.
-    const E_INVALID_TRANCHE_ALLOCATION: u64 = 5;
 
     /// Pool configuration and state for a specific fungible asset
     /// FA is phantom type representing the asset (e.g., USDC, USDT)
@@ -48,16 +42,11 @@ module kach::pool {
         senior_nav_multiplier: u128,
         junior_nav_multiplier: u128,
 
-        // Target allocation (in basis points, sum to 10000)
-        senior_target_bps: u64,
-        junior_target_bps: u64,
-
         // Utilization cap (e.g., 8000 = 80% max utilization)
         max_utilization_bps: u64,
 
         // Protocol reserve
         protocol_reserve_balance: u64,
-        protocol_reserve_target_bps: u64, // Target as % of TVL
         protocol_fee_bps: u64, // % of interest to reserve (e.g., 500 = 5%)
 
         // Counters
@@ -101,7 +90,7 @@ module kach::pool {
 
     #[event]
     struct CreditDrawn has drop, store {
-        borrower: address,
+        attestator: address,
         amount: u64,
         prt_address: address,
         timestamp: u64
@@ -109,7 +98,7 @@ module kach::pool {
 
     #[event]
     struct CreditRepaid has drop, store {
-        borrower: address,
+        attestator: address,
         principal: u64,
         interest: u64,
         prt_address: address,
@@ -120,20 +109,11 @@ module kach::pool {
     public entry fun initialize_pool<FA>(
         admin: &signer,
         fa_metadata: Object<Metadata>,
-        senior_target_bps: u64,
-        junior_target_bps: u64,
         max_utilization_bps: u64,
-        protocol_reserve_target_bps: u64,
         protocol_fee_bps: u64
     ) {
         use aptos_framework::fungible_asset;
         let admin_addr = signer::address_of(admin);
-
-        // Validate tranche allocation sums to 100%
-        assert!(
-            senior_target_bps + junior_target_bps == 10000,
-            E_INVALID_TRANCHE_ALLOCATION
-        );
 
         let pool = Pool<FA> {
             fa_metadata,
@@ -143,11 +123,8 @@ module kach::pool {
             junior_deposits: 0,
             senior_nav_multiplier: 1_000_000_000_000_000_000, // 1e18
             junior_nav_multiplier: 1_000_000_000_000_000_000,
-            senior_target_bps,
-            junior_target_bps,
             max_utilization_bps,
             protocol_reserve_balance: 0,
-            protocol_reserve_target_bps,
             protocol_fee_bps,
             total_position_nfts_minted: 0,
             total_prts_minted: 0,
@@ -220,7 +197,7 @@ module kach::pool {
     public fun get_nav_multiplier<FA>(pool_addr: address, tranche: u8): u128 acquires Pool {
         let pool = borrow_global<Pool<FA>>(pool_addr);
 
-        if (tranche == TRANCHE_SENIOR) {
+        if (tranche == constants::tranche_senior()) {
             pool.senior_nav_multiplier
         } else {
             pool.junior_nav_multiplier
@@ -247,9 +224,9 @@ module kach::pool {
     ) acquires Pool {
         let pool = borrow_global_mut<Pool<FA>>(pool_addr);
 
-        if (tranche == TRANCHE_SENIOR) {
+        if (tranche == constants::tranche_senior()) {
             pool.senior_nav_multiplier = new_multiplier;
-        } else if (tranche == TRANCHE_JUNIOR) {
+        } else if (tranche == constants::tranche_junior()) {
             pool.junior_nav_multiplier = new_multiplier;
         }
     }
@@ -281,7 +258,7 @@ module kach::pool {
         if (is_deposit) {
             pool.total_deposits += amount;
 
-            if (tranche == TRANCHE_SENIOR) {
+            if (tranche == constants::tranche_senior()) {
                 pool.senior_deposits += amount;
             } else {
                 pool.junior_deposits += amount;
@@ -289,7 +266,7 @@ module kach::pool {
         } else {
             pool.total_deposits -= amount;
 
-            if (tranche == TRANCHE_SENIOR) {
+            if (tranche == constants::tranche_senior()) {
                 pool.senior_deposits -= amount;
             } else {
                 pool.junior_deposits -= amount;
@@ -361,7 +338,7 @@ module kach::pool {
     public fun get_tranche_deposits<FA>(pool_addr: address, tranche: u8): u64 acquires Pool {
         let pool = borrow_global<Pool<FA>>(pool_addr);
 
-        if (tranche == TRANCHE_SENIOR) {
+        if (tranche == constants::tranche_senior()) {
             pool.senior_deposits
         } else {
             pool.junior_deposits

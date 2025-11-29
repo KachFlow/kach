@@ -6,7 +6,7 @@ A decentralized lending protocol on Aptos with integrated trust scoring and flex
 
 Kach Protocol provides a complete lending infrastructure with:
 
-- **Trust Scoring**: On-chain credit scoring for borrowers based on repayment history and protocol participation
+- **Trust Scoring**: On-chain credit scoring for attestators based on repayment history and protocol participation
 - **Risk Tranches**: Multi-level risk segmentation for lenders with different risk appetites
 - **Position NFTs**: Tradeable NFT positions for lenders
 - **Interest Rate Models**: Dynamic interest rates based on pool utilization
@@ -29,9 +29,9 @@ const client = createKachClient({
   network: Network.TESTNET
 });
 
-// Read trust score for a borrower
+// Read trust score for a attestator
 const score = await client.view.trust_score.get_trust_score({
-  functionArguments: [borrowerAddress, governanceAddress],
+  functionArguments: [attestatorAddress, governanceAddress],
   typeArguments: [],
 });
 
@@ -75,14 +75,14 @@ await client.entry.pool.create_pool({
 The protocol is implemented as a collection of Move modules:
 
 - **pool**: Core lending pool logic with deposit and borrow functions
-- **trust_score**: Credit scoring system tracking borrower behavior
+- **trust_score**: Credit scoring system tracking attestator behavior
 - **tranche**: Risk-based tranches for lender capital segmentation
 - **credit_engine**: Credit line management and utilization tracking
 - **interest_rate**: Dynamic interest rate calculations
 - **position_nft**: NFT representations of lender positions
 - **governance**: Protocol administration and parameter updates
 - **attestator**: Third-party attestation integration
-- **prt**: Payment Receivable Token for borrower obligations
+- **prt**: Payment Receivable Token for attestator obligations
 
 ### TypeScript SDK
 

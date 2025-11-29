@@ -9,7 +9,7 @@ module kach::prt {
 
     /// Status assigned to every newly minted PRT while the loan is still outstanding.
     const STATUS_OPEN: u8 = 0;
-    /// Status used once the borrower has fully repaid the receivable.
+    /// Status used once the attestator has fully repaid the receivable.
     const STATUS_REPAID: u8 = 1;
     /// Status indicating the receivable defaulted and cannot be collected.
     const STATUS_DEFAULTED: u8 = 2;
@@ -35,8 +35,8 @@ module kach::prt {
         tenor_seconds: u64,
         maturity_timestamp: u64,
 
-        // Borrower information
-        borrower_address: address,
+        // Attestator information
+        attestator_address: address,
         trust_score_snapshot: u64,
 
         // Prefund specific fields
@@ -75,7 +75,7 @@ module kach::prt {
     #[event]
     struct PRTMinted has drop, store {
         prt_address: address,
-        borrower: address,
+        attestator: address,
         pool_address: address,
         principal: u64,
         interest_rate_bps: u64,
@@ -87,7 +87,7 @@ module kach::prt {
     #[event]
     struct PRTRepaid has drop, store {
         prt_address: address,
-        borrower: address,
+        attestator: address,
         principal: u64,
         interest: u64,
         actual_repayment_timestamp: u64,
@@ -98,7 +98,7 @@ module kach::prt {
     #[event]
     struct PRTDefaulted has drop, store {
         prt_address: address,
-        borrower: address,
+        attestator: address,
         principal: u64,
         interest_owed: u64,
         timestamp: u64
@@ -107,7 +107,7 @@ module kach::prt {
     #[event]
     struct PRTMarkedLate has drop, store {
         prt_address: address,
-        borrower: address,
+        attestator: address,
         days_late: u64,
         timestamp: u64
     }
@@ -115,7 +115,7 @@ module kach::prt {
     #[event]
     struct PRTPartialRepayment has drop, store {
         prt_address: address,
-        borrower: address,
+        attestator: address,
         repayment_amount: u64,
         interest_paid: u64,
         early_discount: u64,
@@ -129,7 +129,7 @@ module kach::prt {
     /// Only callable by pool or credit engine
     public fun mint_prt<FA>(
         pool_signer: &signer,
-        borrower_address: address,
+        attestator_address: address,
         principal: u64,
         interest_rate_bps: u64,
         tenor_seconds: u64,
@@ -159,7 +159,7 @@ module kach::prt {
             interest_rate_bps,
             tenor_seconds,
             maturity_timestamp,
-            borrower_address,
+            attestator_address,
             trust_score_snapshot: trust_score,
             is_prefund: false, // Default to standard loan
             requires_attested_repayments: false,
@@ -186,7 +186,7 @@ module kach::prt {
         event::emit(
             PRTMinted {
                 prt_address,
-                borrower: borrower_address,
+                attestator: attestator_address,
                 pool_address,
                 principal,
                 interest_rate_bps,
@@ -203,7 +203,7 @@ module kach::prt {
     /// Similar to mint_prt but sets is_prefund = true
     public fun mint_prefund_prt<FA>(
         pool_signer: &signer,
-        borrower_address: address,
+        attestator_address: address,
         principal: u64,
         interest_rate_bps: u64,
         tenor_seconds: u64,
@@ -232,7 +232,7 @@ module kach::prt {
             interest_rate_bps,
             tenor_seconds,
             maturity_timestamp,
-            borrower_address,
+            attestator_address,
             trust_score_snapshot: trust_score,
             is_prefund: true, // PREFUND loan
             requires_attested_repayments: true, // Every repayment needs attestation
@@ -259,7 +259,7 @@ module kach::prt {
         event::emit(
             PRTMinted {
                 prt_address,
-                borrower: borrower_address,
+                attestator: attestator_address,
                 pool_address,
                 principal,
                 interest_rate_bps,
@@ -319,14 +319,14 @@ module kach::prt {
         };
 
         let new_outstanding = prt_data.outstanding_principal;
-        let borrower = prt_data.borrower_address;
+        let attestator = prt_data.attestator_address;
         let repayment_number = prt_data.repayment_count;
 
         // Emit partial repayment event
         event::emit(
             PRTPartialRepayment {
                 prt_address: prt_addr,
-                borrower,
+                attestator,
                 repayment_amount,
                 interest_paid: interest_owed - early_discount,
                 early_discount,
@@ -381,7 +381,7 @@ module kach::prt {
 
         let interest = calculate_interest_internal(prt_data);
         let principal = prt_data.principal;
-        let borrower = prt_data.borrower_address;
+        let attestator = prt_data.attestator_address;
         let is_on_time = timestamp::now_seconds() <= prt_data.maturity_timestamp;
 
         // Update status
@@ -392,7 +392,7 @@ module kach::prt {
         event::emit(
             PRTRepaid {
                 prt_address: prt_addr,
-                borrower,
+                attestator,
                 principal,
                 interest,
                 actual_repayment_timestamp: timestamp::now_seconds(),
@@ -421,14 +421,14 @@ module kach::prt {
 
         let principal = prt_data.principal;
         let interest = calculate_interest_internal(prt_data);
-        let borrower = prt_data.borrower_address;
+        let attestator = prt_data.attestator_address;
 
         prt_data.status = STATUS_DEFAULTED;
 
         event::emit(
             PRTDefaulted {
                 prt_address: prt_addr,
-                borrower,
+                attestator,
                 principal,
                 interest_owed: interest,
                 timestamp: timestamp::now_seconds()
@@ -455,7 +455,7 @@ module kach::prt {
         event::emit(
             PRTMarkedLate {
                 prt_address: prt_addr,
-                borrower: prt_data.borrower_address,
+                attestator: prt_data.attestator_address,
                 days_late,
                 timestamp: timestamp::now_seconds()
             }
@@ -496,7 +496,7 @@ module kach::prt {
         : (address, u64, u64, u64, u64, u8, u64) acquires PRT {
         let prt_data = borrow_global<PRT<FA>>(object::object_address(&prt));
         (
-            prt_data.borrower_address,
+            prt_data.attestator_address,
             prt_data.principal,
             prt_data.interest_rate_bps,
             prt_data.maturity_timestamp,
@@ -551,10 +551,10 @@ module kach::prt {
         prt_data.pool_address
     }
 
-    /// Get borrower address
+    /// Get attestator address
     #[view]
-    public fun get_borrower<FA>(prt: Object<PRT<FA>>): address acquires PRT {
+    public fun get_attestator<FA>(prt: Object<PRT<FA>>): address acquires PRT {
         let prt_data = borrow_global<PRT<FA>>(object::object_address(&prt));
-        prt_data.borrower_address
+        prt_data.attestator_address
     }
 }
