@@ -22,6 +22,8 @@ module kach::pool {
     const E_INSUFFICIENT_LIQUIDITY: u64 = 3;
     /// Error when an action would push utilization above the configured maximum.
     const E_UTILIZATION_TOO_HIGH: u64 = 4;
+    /// Error when an action is blocked because the protocol is globally paused.
+    const E_PROTOCOL_PAUSED: u64 = 5;
 
     // ===== Tranche Identifiers =====
 

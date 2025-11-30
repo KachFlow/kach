@@ -30,6 +30,8 @@ module kach::attestator {
     const E_ATTESTATION_NOT_FOUND: u64 = 12;
     /// Error when a settlement attempt is made by a different attestator.
     const E_WRONG_ATTESTATOR: u64 = 13;
+    /// Error when an action is blocked because the protocol is globally paused.
+    const E_PROTOCOL_PAUSED: u64 = 14;
 
     /// Attestator information
     struct AttestatorInfo has store {
@@ -247,8 +249,12 @@ module kach::attestator {
         receivable_type: vector<u8>,
         amount: u64,
         attestation_metadata: String,
-        registry_addr: address
+        registry_addr: address,
+        governance_addr: address
     ): Object<Attestation> acquires AttestatorRegistry {
+        // Check if protocol is globally paused
+        assert!(!governance::is_globally_paused(governance_addr), E_PROTOCOL_PAUSED);
+
         let attestator_addr = signer::address_of(attestator);
 
         // Verify attestator is registered and active

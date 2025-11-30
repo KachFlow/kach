@@ -28,6 +28,8 @@ module kach::credit_engine {
     const E_POOL_INSUFFICIENT_LIQUIDITY: u64 = 6;
     /// Error when a attestator's trust score fails to meet the required threshold.
     const E_TRUST_SCORE_TOO_LOW: u64 = 7;
+    /// Error when an action is blocked because the protocol is globally paused.
+    const E_PROTOCOL_PAUSED: u64 = 8;
 
     /// Minimum tenor for standard draws (1 day in seconds)
     const MIN_STANDARD_TENOR_SECONDS: u64 = 86400; // 1 day
@@ -152,7 +154,7 @@ module kach::credit_engine {
 
         // Verify credit line doesn't already exist
         assert!(
-            !smart_table::contains(&registry.credit_lines, attestator_address),
+            !registry.credit_lines.contains(attestator_address),
             E_CREDIT_LINE_EXISTS
         );
 
@@ -206,6 +208,9 @@ module kach::credit_engine {
         governance_address: address,
         fa_metadata: Object<Metadata>
     ) acquires CreditLineRegistry {
+        // Check if protocol is globally paused
+        assert!(!governance::is_globally_paused(governance_address), E_PROTOCOL_PAUSED);
+
         let attestator_addr = signer::address_of(attestator);
 
         // Get credit line
@@ -214,7 +219,8 @@ module kach::credit_engine {
             smart_table::contains(&registry.credit_lines, attestator_addr),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line = smart_table::borrow_mut(&mut registry.credit_lines, attestator_addr);
+        let credit_line =
+            smart_table::borrow_mut(&mut registry.credit_lines, attestator_addr);
 
         // Verify active
         assert!(credit_line.is_active, E_CREDIT_LINE_INACTIVE);
@@ -223,20 +229,17 @@ module kach::credit_engine {
         assert!(attestator::is_attestation_valid(attestation), E_NOT_AUTHORIZED);
 
         // Get attestation details
-        let (
-            attestator_from_attestation,
-            _receivable_type,
-            amount,
-            _is_used,
-            _prt_addr
-        ) = attestator::get_attestation_info(attestation);
+        let (attestator_from_attestation, _receivable_type, amount, _is_used, _prt_addr) =
+            attestator::get_attestation_info(attestation);
 
         // Verify attestation is for this attestator
         assert!(attestator_from_attestation == attestator_addr, E_NOT_AUTHORIZED);
 
         // Get trust score
         let trust_score_value =
-            trust_score::get_trust_score(attestator_addr, credit_line.pool_address, governance_address);
+            trust_score::get_trust_score(
+                attestator_addr, credit_line.pool_address, governance_address
+            );
         assert!(
             trust_score_value >= trust_score::min_trust_score_to_draw(),
             E_TRUST_SCORE_TOO_LOW
@@ -323,6 +326,9 @@ module kach::credit_engine {
         governance_address: address,
         fa_metadata: Object<Metadata>
     ) acquires CreditLineRegistry {
+        // Check if protocol is globally paused
+        assert!(!governance::is_globally_paused(governance_address), E_PROTOCOL_PAUSED);
+
         let attestator_addr = signer::address_of(attestator);
 
         // Get credit line
@@ -331,14 +337,17 @@ module kach::credit_engine {
             smart_table::contains(&registry.credit_lines, attestator_addr),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line = smart_table::borrow_mut(&mut registry.credit_lines, attestator_addr);
+        let credit_line =
+            smart_table::borrow_mut(&mut registry.credit_lines, attestator_addr);
 
         // Verify active
         assert!(credit_line.is_active, E_CREDIT_LINE_INACTIVE);
 
         // STRICT trust score check for prefund (>= 95)
         let trust_score_value =
-            trust_score::get_trust_score(attestator_addr, credit_line.pool_address, governance_address);
+            trust_score::get_trust_score(
+                attestator_addr, credit_line.pool_address, governance_address
+            );
         assert!(
             trust_score_value >= trust_score::min_trust_score_for_prefund(),
             E_TRUST_SCORE_TOO_LOW
@@ -431,7 +440,8 @@ module kach::credit_engine {
             smart_table::contains(&registry.credit_lines, attestator_addr),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line = smart_table::borrow_mut(&mut registry.credit_lines, attestator_addr);
+        let credit_line =
+            smart_table::borrow_mut(&mut registry.credit_lines, attestator_addr);
 
         // Verify attestation is valid (not already used)
         assert!(attestator::is_attestation_valid(attestation), E_NOT_AUTHORIZED);
@@ -544,7 +554,8 @@ module kach::credit_engine {
             smart_table::contains(&registry.credit_lines, attestator_addr),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line = smart_table::borrow_mut(&mut registry.credit_lines, attestator_addr);
+        let credit_line =
+            smart_table::borrow_mut(&mut registry.credit_lines, attestator_addr);
 
         // Get PRT details
         let (
@@ -632,7 +643,8 @@ module kach::credit_engine {
             smart_table::contains(&registry.credit_lines, attestator_address),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line = smart_table::borrow_mut(&mut registry.credit_lines, attestator_address);
+        let credit_line =
+            smart_table::borrow_mut(&mut registry.credit_lines, attestator_address);
 
         let old_max = credit_line.max_outstanding;
         credit_line.max_outstanding = new_max_outstanding;
@@ -670,7 +682,8 @@ module kach::credit_engine {
             smart_table::contains(&registry.credit_lines, attestator_address),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line = smart_table::borrow_mut(&mut registry.credit_lines, attestator_address);
+        let credit_line =
+            smart_table::borrow_mut(&mut registry.credit_lines, attestator_address);
 
         credit_line.is_active = false;
 
@@ -704,11 +717,14 @@ module kach::credit_engine {
             smart_table::contains(&registry.credit_lines, attestator_address),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line = smart_table::borrow_mut(&mut registry.credit_lines, attestator_address);
+        let credit_line =
+            smart_table::borrow_mut(&mut registry.credit_lines, attestator_address);
 
         // Verify trust score is acceptable
         let trust_score_value =
-            trust_score::get_trust_score(attestator_address, credit_line.pool_address, governance_address);
+            trust_score::get_trust_score(
+                attestator_address, credit_line.pool_address, governance_address
+            );
         assert!(
             trust_score_value >= trust_score::min_trust_score_to_draw(),
             E_TRUST_SCORE_TOO_LOW
@@ -729,7 +745,9 @@ module kach::credit_engine {
             return 0
         };
 
-        let credit_line = smart_table::borrow(&registry.credit_lines, attestator_address);
+        let credit_line = smart_table::borrow(
+            &registry.credit_lines, attestator_address
+        );
 
         if (!credit_line.is_active) {
             return 0
@@ -749,7 +767,9 @@ module kach::credit_engine {
             smart_table::contains(&registry.credit_lines, attestator_address),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line = smart_table::borrow(&registry.credit_lines, attestator_address);
+        let credit_line = smart_table::borrow(
+            &registry.credit_lines, attestator_address
+        );
 
         (
             credit_line.max_outstanding,
@@ -770,7 +790,9 @@ module kach::credit_engine {
             smart_table::contains(&registry.credit_lines, attestator_address),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line = smart_table::borrow(&registry.credit_lines, attestator_address);
+        let credit_line = smart_table::borrow(
+            &registry.credit_lines, attestator_address
+        );
 
         (
             credit_line.total_volume_drawn,
@@ -791,7 +813,9 @@ module kach::credit_engine {
             return false
         };
 
-        let credit_line = smart_table::borrow(&registry.credit_lines, attestator_address);
+        let credit_line = smart_table::borrow(
+            &registry.credit_lines, attestator_address
+        );
         credit_line.is_active
     }
 
@@ -806,7 +830,9 @@ module kach::credit_engine {
             return 0
         };
 
-        let credit_line = smart_table::borrow(&registry.credit_lines, attestator_address);
+        let credit_line = smart_table::borrow(
+            &registry.credit_lines, attestator_address
+        );
 
         if (credit_line.max_outstanding == 0) {
             return 0
@@ -817,3 +843,4 @@ module kach::credit_engine {
             / (credit_line.max_outstanding as u128) as u64)
     }
 }
+
