@@ -71,8 +71,8 @@ Each Position NFT contains the following metadata:
 - Type safety via phantom type parameter `<FA>`
 
 **tranche**:
-- `0` = Senior (lower risk, 20% max loss, lower yield share)
-- `1` = Junior (higher risk, 80% max loss, higher yield share)
+- `0` = Senior (lower risk, takes losses after junior, lower yield share)
+- `1` = Junior (first-loss capital, higher yield share)
 
 **shares**:
 - Number of shares in the tranche

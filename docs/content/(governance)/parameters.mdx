@@ -113,14 +113,10 @@ These values are hardcoded in contracts and cannot be changed without contract u
 - Total weight: `w_total = w_senior + w_junior`
 - Senior share = `(interest_after_fee × w_senior) / w_total`
 - Junior share = `(interest_after_fee × w_junior) / w_total`
-
-#### Loss Limits
-| Constant | Value (bps) | Value (%) | Tranche |
-|----------|------------|-----------|---------|
-| `JUNIOR_MAX_LOSS_BPS` | 8000 | 80% | Junior absorbs first |
-| `SENIOR_MAX_LOSS_BPS` | 2000 | 20% | Senior absorbs after junior |
-
-**Note**: Losses allocated in waterfall order: Junior → Senior (after protocol reserve exhausted)
+**Loss Waterfall**:
+- Protocol reserve absorbs first
+- Junior tranche absorbs losses next until depleted
+- Senior tranche absorbs remaining loss
 
 ### Scaling Constants
 

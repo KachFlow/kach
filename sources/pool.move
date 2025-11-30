@@ -25,24 +25,10 @@ module kach::pool {
 
     // ===== Tranche Identifiers =====
 
-    /// Identifier for the senior tranche
-    const TRANCHE_SENIOR: u8 = 0;
-
     /// Identifier for the junior tranche
     const TRANCHE_JUNIOR: u8 = 1;
-
-    // ===== Tranche Loss Limits =====
-
-    /// Maximum share of capital that the junior tranche can lose (basis points)
-    const JUNIOR_MAX_LOSS_BPS: u64 = 8000; // 80%
-
-    /// Maximum share of capital that the senior tranche can lose (basis points)
-    const SENIOR_MAX_LOSS_BPS: u64 = 2000; // 20%
-
-    // ===== Protocol Fees =====
-
-    /// Protocol fee percentage (7% of gross interest per documentation)
-    const PROTOCOL_FEE_BPS: u64 = 700; // 7%
+    /// Identifier for the senior tranche
+    const TRANCHE_SENIOR: u8 = 0;
 
     /// Pool configuration and state for a specific fungible asset
     /// FA is phantom type representing the asset (e.g., USDC, USDT)
@@ -157,7 +143,6 @@ module kach::pool {
         admin: &signer,
         fa_metadata: Object<Metadata>,
         max_utilization_bps: u64,
-        protocol_fee_bps: u64,
         governance_address: address
     ) {
         use aptos_framework::fungible_asset;
@@ -181,7 +166,7 @@ module kach::pool {
             junior_nav_multiplier: 1_000_000_000_000_000_000,
             max_utilization_bps,
             protocol_reserve_balance: 0,
-            protocol_fee_bps,
+            protocol_fee_bps: governance::get_protocol_fee_bps(governance_address),
             total_position_nfts_minted: 0,
             total_prts_minted: 0,
             is_paused: false
@@ -473,12 +458,19 @@ module kach::pool {
     /// - Multipliers calculated based on actual pool composition
     /// - Junior multiplier = 1.0 + (protection_ratio × base_risk_premium)
     /// - Senior multiplier = 1.0 - (junior_ratio × base_risk_premium)
-    /// - Protocol fee: 7% of gross interest
+    /// - Protocol fee: pulled from governance config
     public fun distribute_yield<FA>(
         pool_address: address, total_interest: u64, governance_address: address
     ) acquires Pool {
-        // Calculate protocol reserve share (7% per documentation)
-        let protocol_share = (total_interest as u128) * (PROTOCOL_FEE_BPS as u128)
+        // Sync protocol fee with governance before applying
+        let protocol_fee_bps = governance::get_protocol_fee_bps(governance_address);
+        {
+            let pool = borrow_global_mut<Pool<FA>>(pool_address);
+            pool.protocol_fee_bps = protocol_fee_bps;
+        };
+
+        // Calculate protocol reserve share from governance-configured fee
+        let protocol_share = (total_interest as u128) * (protocol_fee_bps as u128)
             / 10000;
         let protocol_share_u64 = (protocol_share as u64);
 
@@ -572,10 +564,9 @@ module kach::pool {
     }
 
     /// Allocate losses across tranches using waterfall
-    /// Per documentation (tranches.mdx):
     /// 1. Protocol Reserve absorbs first
-    /// 2. Junior tranche (up to 80% of junior capital)
-    /// 3. Senior tranche (up to 20% of senior capital, if needed)
+    /// 2. Junior tranche absorbs up to its full deposits
+    /// 3. Senior tranche absorbs up to its full deposits
     public fun allocate_loss<FA>(pool_address: address, total_loss: u64) acquires Pool {
         let remaining_loss = total_loss;
 
@@ -600,22 +591,16 @@ module kach::pool {
         let senior_absorbed = 0u64;
 
         if (remaining_loss > 0) {
-            // Step 1: Junior tranche absorbs (up to 80% of junior deposits)
+            // Step 1: Junior tranche absorbs (up to all junior deposits)
             (remaining_loss, junior_absorbed) = absorb_loss_in_tranche<FA>(
-                pool_address,
-                TRANCHE_JUNIOR,
-                remaining_loss,
-                JUNIOR_MAX_LOSS_BPS
+                pool_address, TRANCHE_JUNIOR, remaining_loss
             );
         };
 
         if (remaining_loss > 0) {
-            // Step 2: Senior tranche absorbs (up to 20% of senior deposits)
+            // Step 2: Senior tranche absorbs remaining (up to all senior deposits)
             (_, senior_absorbed) = absorb_loss_in_tranche<FA>(
-                pool_address,
-                TRANCHE_SENIOR,
-                remaining_loss,
-                SENIOR_MAX_LOSS_BPS
+                pool_address, TRANCHE_SENIOR, remaining_loss
             );
             // If still remaining loss, protocol is insolvent
             // This should trigger emergency procedures
@@ -636,23 +621,16 @@ module kach::pool {
     /// Internal: Absorb loss in a specific tranche
     /// Returns (remaining_loss, absorbed_amount)
     fun absorb_loss_in_tranche<FA>(
-        pool_address: address,
-        tranche: u8,
-        loss_amount: u64,
-        max_loss_bps: u64
+        pool_address: address, tranche: u8, loss_amount: u64
     ): (u64, u64) acquires Pool {
         // Get tranche deposits from pool
         let tranche_deposits = get_tranche_deposits<FA>(pool_address, tranche);
 
-        // Max loss this tranche can absorb
-        let max_absorbable = (tranche_deposits as u128) * (max_loss_bps as u128) / 10000;
-        let max_absorbable_u64 = (max_absorbable as u64);
-
         let absorbed =
-            if (loss_amount <= max_absorbable_u64) {
+            if (loss_amount <= tranche_deposits) {
                 loss_amount
             } else {
-                max_absorbable_u64
+                tranche_deposits
             };
 
         let remaining = loss_amount - absorbed;
@@ -729,22 +707,6 @@ module kach::pool {
         );
     }
 
-    /// Get junior tranche max loss in basis points
-    public fun junior_max_loss_bps(): u64 {
-        JUNIOR_MAX_LOSS_BPS
-    }
-
-    /// Get senior tranche max loss in basis points
-    public fun senior_max_loss_bps(): u64 {
-        SENIOR_MAX_LOSS_BPS
-    }
-
-    /// Get protocol fee in basis points
-    #[view]
-    public fun protocol_fee_bps(): u64 {
-        PROTOCOL_FEE_BPS
-    }
-
     /// Calculate current dynamic multipliers for a pool based on composition
     /// Returns (senior_multiplier_bps, junior_multiplier_bps) scaled by 10000
     /// Example: If senior multiplier is 0.925, returns 9250
@@ -787,15 +749,4 @@ module kach::pool {
 
         ((senior_multiplier as u64), (junior_multiplier as u64))
     }
-
-    /// Get max loss a tranche can absorb (in bps of tranche capital)
-    #[view]
-    public fun get_max_loss_bps(tranche: u8): u64 {
-        if (tranche == TRANCHE_JUNIOR) {
-            JUNIOR_MAX_LOSS_BPS
-        } else {
-            SENIOR_MAX_LOSS_BPS
-        }
-    }
 }
-
