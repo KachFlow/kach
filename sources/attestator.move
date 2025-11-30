@@ -67,7 +67,6 @@ module kach::attestator {
         amount: u64, // Expected receivable amount
         attestation_timestamp: u64,
         attestation_metadata: String, // Attestator's verification notes
-        can_delegate_settlement: bool,
 
         // PRT tracking (set when PRT is created)
         prt_address: address, // @0x0 until PRT created
@@ -75,7 +74,6 @@ module kach::attestator {
 
         // Settlement tracking
         is_settled: bool,
-        settled_by_attestator: bool,
         settlement_timestamp: u64,
 
         // Object management
@@ -227,7 +225,6 @@ module kach::attestator {
         receivable_type: vector<u8>,
         amount: u64,
         attestation_metadata: String,
-        can_delegate_settlement: bool,
         registry_addr: address
     ): Object<Attestation> acquires AttestatorRegistry {
         let attestator_addr = signer::address_of(attestator);
@@ -265,11 +262,9 @@ module kach::attestator {
             amount,
             attestation_timestamp: timestamp::now_seconds(),
             attestation_metadata,
-            can_delegate_settlement,
             prt_address: @0x0, // Will be set when PRT is created
             is_used: false,
             is_settled: false,
-            settled_by_attestator: false,
             settlement_timestamp: 0,
             extend_ref,
             delete_ref
@@ -342,11 +337,9 @@ module kach::attestator {
             amount: amount_collected,
             attestation_timestamp: timestamp::now_seconds(),
             attestation_metadata,
-            can_delegate_settlement: false, // Repayment attestations don't delegate
             prt_address, // Already know which PRT
             is_used: false, // Will be marked used when repayment processed
             is_settled: false,
-            settled_by_attestator: false,
             settlement_timestamp: 0,
             extend_ref,
             delete_ref
@@ -532,7 +525,7 @@ module kach::attestator {
     #[view]
     public fun get_attestation_info(
         attestation: Object<Attestation>
-    ): (address, vector<u8>, u64, bool, bool, address) acquires Attestation {
+    ): (address, vector<u8>, u64, bool, address) acquires Attestation {
         let attestation_addr = object::object_address(&attestation);
         assert!(exists<Attestation>(attestation_addr), E_ATTESTATION_NOT_FOUND);
         let attestation_data = borrow_global<Attestation>(attestation_addr);
@@ -540,7 +533,6 @@ module kach::attestator {
             attestation_data.attestator_address,
             attestation_data.receivable_type,
             attestation_data.amount,
-            attestation_data.can_delegate_settlement,
             attestation_data.is_used,
             attestation_data.prt_address
         )

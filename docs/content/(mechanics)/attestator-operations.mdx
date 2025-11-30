@@ -144,8 +144,7 @@ public entry fun create_attestation<FA>(
     amount: u64,
     receivable_type: String,
     proof_hash: vector<u8>,
-    metadata_uri: String,
-    can_delegate_settlement: bool
+    metadata_uri: String
 )
 ```
 
@@ -184,7 +183,6 @@ struct Attestation<phantom FA> {
     receivable_type: String,
     proof_hash: vector<u8>,
     metadata_uri: String,
-    can_delegate_settlement: bool,
     created_at: u64,
     used: bool,  // Becomes true when linked to PRT
     revoked: bool

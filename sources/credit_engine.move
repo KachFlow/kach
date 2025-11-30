@@ -229,7 +229,6 @@ module kach::credit_engine {
             attestator_from_attestation,
             _receivable_type,
             amount,
-            _can_delegate,
             _is_used,
             _prt_addr
         ) = attestator::get_attestation_info(attestation);
@@ -440,7 +439,6 @@ module kach::credit_engine {
             attestator_from_attestation,
             _receivable_type,
             amount_attested,
-            _can_delegate,
             _is_used,
             attested_prt_addr
         ) = attestator::get_attestation_info(attestation);
