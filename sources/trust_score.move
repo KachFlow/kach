@@ -61,7 +61,6 @@ module kach::trust_score {
 
     /// Global registry tracking all trust scores
     struct TrustScoreRegistry has key {
-        admin_address: address,
         total_scores: u64 // Total number of (attestator, pool) trust scores
     }
 
@@ -103,9 +102,7 @@ module kach::trust_score {
 
     /// Initialize the global trust score registry
     public entry fun initialize_registry(admin: &signer) {
-        let admin_addr = signer::address_of(admin);
-
-        let registry = TrustScoreRegistry { admin_address: admin_addr, total_scores: 0 };
+        let registry = TrustScoreRegistry { total_scores: 0 };
 
         move_to(admin, registry);
     }
@@ -121,9 +118,13 @@ module kach::trust_score {
     ) acquires TrustScoreRegistry {
         let admin_addr = signer::address_of(admin);
 
-        // Verify admin authorization
+        // Verify admin has permission to manage trust scores
+        assert!(
+            governance::can_manage_trust_scores(governance_address, admin_addr),
+            E_NOT_AUTHORIZED
+        );
+
         let registry = borrow_global_mut<TrustScoreRegistry>(governance_address);
-        assert!(admin_addr == registry.admin_address, E_NOT_AUTHORIZED);
 
         // Verify trust score doesn't already exist for this (attestator, pool) pair
         assert!(
@@ -183,8 +184,13 @@ module kach::trust_score {
     ) acquires TrustScore, TrustScoreRegistry {
         let admin_addr = signer::address_of(admin);
 
-        let registry = borrow_global<TrustScoreRegistry>(governance_address);
-        assert!(admin_addr == registry.admin_address, E_NOT_AUTHORIZED);
+        // Verify admin has permission to manage trust scores
+        assert!(
+            governance::can_manage_trust_scores(governance_address, admin_addr),
+            E_NOT_AUTHORIZED
+        );
+
+        let _registry = borrow_global<TrustScoreRegistry>(governance_address);
 
         // If trust score exists, update it; otherwise create new one
         if (exists<TrustScore>(attestator_address)) {
@@ -221,8 +227,13 @@ module kach::trust_score {
     ) acquires TrustScore, TrustScoreRegistry {
         let admin_addr = signer::address_of(admin);
 
-        let registry = borrow_global<TrustScoreRegistry>(governance_address);
-        assert!(admin_addr == registry.admin_address, E_NOT_AUTHORIZED);
+        // Verify admin has permission to manage trust scores
+        assert!(
+            governance::can_manage_trust_scores(governance_address, admin_addr),
+            E_NOT_AUTHORIZED
+        );
+
+        let _registry = borrow_global<TrustScoreRegistry>(governance_address);
 
         assert!(exists<TrustScore>(attestator_address), E_TRUST_SCORE_NOT_FOUND);
 

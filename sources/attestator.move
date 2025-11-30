@@ -6,6 +6,8 @@ module kach::attestator {
     use aptos_framework::event;
     use aptos_framework::timestamp;
 
+    use kach::governance;
+
     /// Error when a caller without the admin/operator capability invokes an action.
     const E_NOT_AUTHORIZED: u64 = 1;
     /// Error when registering an attestator address that already exists.
@@ -49,7 +51,6 @@ module kach::attestator {
 
     /// Global registry of attestators
     struct AttestatorRegistry has key {
-        admin_address: address,
         attestators: vector<address>,
         total_attestators: u64,
 
@@ -123,10 +124,7 @@ module kach::attestator {
 
     /// Initialize attestator registry
     public entry fun initialize_registry(admin: &signer) {
-        let admin_addr = signer::address_of(admin);
-
         let registry = AttestatorRegistry {
-            admin_address: admin_addr,
             attestators: vector::empty<address>(),
             total_attestators: 0,
             attestator_info: vector::empty<AttestatorInfo>()
@@ -138,15 +136,22 @@ module kach::attestator {
     /// Register a new attestator (admin only)
     public entry fun register_attestator(
         admin: &signer,
+        registry_address: address,
         attestator_address: address,
         supported_receivable_types: vector<vector<u8>>,
-        metadata_uri: String
+        metadata_uri: String,
+        governance_address: address
     ) acquires AttestatorRegistry {
         let admin_addr = signer::address_of(admin);
 
-        // Verify admin
-        let registry = borrow_global_mut<AttestatorRegistry>(admin_addr);
-        assert!(admin_addr == registry.admin_address, E_NOT_AUTHORIZED);
+        // Check permission to manage attestators
+        assert!(
+            governance::can_manage_attestators(governance_address, admin_addr),
+            E_NOT_AUTHORIZED
+        );
+
+        // Get registry
+        let registry = borrow_global_mut<AttestatorRegistry>(registry_address);
 
         // Verify not already registered
         assert!(
@@ -184,12 +189,21 @@ module kach::attestator {
 
     /// Deactivate an attestator (admin only)
     public entry fun deactivate_attestator(
-        admin: &signer, attestator_address: address, reason: String
+        admin: &signer,
+        registry_address: address,
+        attestator_address: address,
+        reason: String,
+        governance_address: address
     ) acquires AttestatorRegistry {
         let admin_addr = signer::address_of(admin);
 
-        let registry = borrow_global_mut<AttestatorRegistry>(admin_addr);
-        assert!(admin_addr == registry.admin_address, E_NOT_AUTHORIZED);
+        // Check permission to manage attestators
+        assert!(
+            governance::can_manage_attestators(governance_address, admin_addr),
+            E_NOT_AUTHORIZED
+        );
+
+        let registry = borrow_global_mut<AttestatorRegistry>(registry_address);
 
         let attestator_info = get_attestator_info_mut(registry, attestator_address);
         attestator_info.is_active = false;
@@ -205,12 +219,20 @@ module kach::attestator {
 
     /// Reactivate an attestator (admin only)
     public entry fun reactivate_attestator(
-        admin: &signer, attestator_address: address
+        admin: &signer,
+        registry_address: address,
+        attestator_address: address,
+        governance_address: address
     ) acquires AttestatorRegistry {
         let admin_addr = signer::address_of(admin);
 
-        let registry = borrow_global_mut<AttestatorRegistry>(admin_addr);
-        assert!(admin_addr == registry.admin_address, E_NOT_AUTHORIZED);
+        // Check permission to manage attestators
+        assert!(
+            governance::can_manage_attestators(governance_address, admin_addr),
+            E_NOT_AUTHORIZED
+        );
+
+        let registry = borrow_global_mut<AttestatorRegistry>(registry_address);
 
         let attestator_info = get_attestator_info_mut(registry, attestator_address);
         attestator_info.is_active = true;

@@ -5,12 +5,14 @@ module kach::credit_engine {
     use aptos_framework::event;
     use aptos_framework::timestamp;
     use aptos_framework::fungible_asset::Metadata;
+    use aptos_framework::smart_table::{Self, SmartTable};
 
     use kach::pool;
     use kach::prt;
     use kach::trust_score;
     use kach::attestator::{Self, Attestation};
     use kach::interest_rate;
+    use kach::governance;
 
     /// Error when caller is not authorized to mutate the credit engine state.
     const E_NOT_AUTHORIZED: u64 = 1;
@@ -34,7 +36,7 @@ module kach::credit_engine {
     const MAX_STANDARD_TENOR_SECONDS: u64 = 432000; // 5 days
 
     /// Credit line for a attestator - tied to specific asset pool
-    struct CreditLine<phantom FA> has key {
+    struct CreditLine<phantom FA> has store, drop {
         attestator_address: address,
         pool_address: address,
 
@@ -64,7 +66,7 @@ module kach::credit_engine {
     /// Global registry of credit lines per asset type
     /// Maps attestator address -> credit line
     struct CreditLineRegistry<phantom FA> has key {
-        admin_address: address,
+        credit_lines: SmartTable<address, CreditLine<FA>>,
         total_credit_lines: u64
     }
 
@@ -117,10 +119,8 @@ module kach::credit_engine {
 
     /// Initialize credit line registry for an asset type
     public entry fun initialize_registry<FA>(admin: &signer) {
-        let admin_addr = signer::address_of(admin);
-
         let registry = CreditLineRegistry<FA> {
-            admin_address: admin_addr,
+            credit_lines: smart_table::new(),
             total_credit_lines: 0
         };
 
@@ -131,6 +131,7 @@ module kach::credit_engine {
     /// Only admin can create credit lines (after KYB/underwriting)
     public entry fun create_credit_line<FA>(
         admin: &signer,
+        registry_address: address,
         attestator_address: address,
         pool_address: address,
         max_outstanding: u64,
@@ -140,13 +141,18 @@ module kach::credit_engine {
     ) acquires CreditLineRegistry {
         let admin_addr = signer::address_of(admin);
 
-        // Verify admin
-        let registry = borrow_global_mut<CreditLineRegistry<FA>>(admin_addr);
-        assert!(admin_addr == registry.admin_address, E_NOT_AUTHORIZED);
+        // Check permission to create credit line
+        assert!(
+            governance::can_create_credit_line(governance_address, admin_addr),
+            E_NOT_AUTHORIZED
+        );
+
+        // Get registry
+        let registry = borrow_global_mut<CreditLineRegistry<FA>>(registry_address);
 
         // Verify credit line doesn't already exist
         assert!(
-            !exists<CreditLine<FA>>(attestator_address),
+            !smart_table::contains(&registry.credit_lines, attestator_address),
             E_CREDIT_LINE_EXISTS
         );
 
@@ -176,8 +182,7 @@ module kach::credit_engine {
             total_volume_repaid: 0
         };
 
-        move_to(admin, credit_line);
-
+        smart_table::add(&mut registry.credit_lines, attestator_address, credit_line);
         registry.total_credit_lines += 1;
 
         event::emit(
@@ -195,19 +200,21 @@ module kach::credit_engine {
     /// Creates a PRT and transfers fungible assets to attestator
     public entry fun draw_credit<FA>(
         attestator: &signer,
+        registry_address: address,
         attestation: Object<Attestation>,
         tenor_seconds: u64,
         governance_address: address,
         fa_metadata: Object<Metadata>
-    ) acquires CreditLine {
+    ) acquires CreditLineRegistry {
         let attestator_addr = signer::address_of(attestator);
 
         // Get credit line
+        let registry = borrow_global_mut<CreditLineRegistry<FA>>(registry_address);
         assert!(
-            exists<CreditLine<FA>>(attestator_addr),
+            smart_table::contains(&registry.credit_lines, attestator_addr),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line = borrow_global_mut<CreditLine<FA>>(attestator_addr);
+        let credit_line = smart_table::borrow_mut(&mut registry.credit_lines, attestator_addr);
 
         // Verify active
         assert!(credit_line.is_active, E_CREDIT_LINE_INACTIVE);
@@ -310,19 +317,21 @@ module kach::credit_engine {
     /// Must attest each repayment later
     public entry fun draw_credit_prefund<FA>(
         attestator: &signer,
+        registry_address: address,
         amount: u64,
         tenor_seconds: u64, // Must be one of: 7, 14, 30, 60, 90 days
         governance_address: address,
         fa_metadata: Object<Metadata>
-    ) acquires CreditLine {
+    ) acquires CreditLineRegistry {
         let attestator_addr = signer::address_of(attestator);
 
         // Get credit line
+        let registry = borrow_global_mut<CreditLineRegistry<FA>>(registry_address);
         assert!(
-            exists<CreditLine<FA>>(attestator_addr),
+            smart_table::contains(&registry.credit_lines, attestator_addr),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line = borrow_global_mut<CreditLine<FA>>(attestator_addr);
+        let credit_line = smart_table::borrow_mut(&mut registry.credit_lines, attestator_addr);
 
         // Verify active
         assert!(credit_line.is_active, E_CREDIT_LINE_INACTIVE);
@@ -407,20 +416,22 @@ module kach::credit_engine {
     /// REQUIRES attestation proving receivable was collected
     public entry fun partial_repayment<FA>(
         attestator: &signer,
+        registry_address: address,
         prt: Object<prt::PRT<FA>>,
         attestation: Object<Attestation>, // Proof of receivable collection
         repayment_amount: u64,
         governance_address: address,
         fa_metadata: Object<Metadata>
-    ) acquires CreditLine {
+    ) acquires CreditLineRegistry {
         let attestator_addr = signer::address_of(attestator);
 
         // Get credit line
+        let registry = borrow_global_mut<CreditLineRegistry<FA>>(registry_address);
         assert!(
-            exists<CreditLine<FA>>(attestator_addr),
+            smart_table::contains(&registry.credit_lines, attestator_addr),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line = borrow_global_mut<CreditLine<FA>>(attestator_addr);
+        let credit_line = smart_table::borrow_mut(&mut registry.credit_lines, attestator_addr);
 
         // Verify attestation is valid (not already used)
         assert!(attestator::is_attestation_valid(attestation), E_NOT_AUTHORIZED);
@@ -520,18 +531,20 @@ module kach::credit_engine {
     /// Burns PRT, transfers assets back to pool, updates trust score
     public entry fun repay_credit<FA>(
         attestator: &signer,
+        registry_address: address,
         prt: Object<prt::PRT<FA>>,
         governance_address: address,
         fa_metadata: Object<Metadata>
-    ) acquires CreditLine {
+    ) acquires CreditLineRegistry {
         let attestator_addr = signer::address_of(attestator);
 
         // Get credit line
+        let registry = borrow_global_mut<CreditLineRegistry<FA>>(registry_address);
         assert!(
-            exists<CreditLine<FA>>(attestator_addr),
+            smart_table::contains(&registry.credit_lines, attestator_addr),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line = borrow_global_mut<CreditLine<FA>>(attestator_addr);
+        let credit_line = smart_table::borrow_mut(&mut registry.credit_lines, attestator_addr);
 
         // Get PRT details
         let (
@@ -599,20 +612,27 @@ module kach::credit_engine {
 
     /// Update credit line limit (admin only)
     public entry fun update_credit_line<FA>(
-        admin: &signer, attestator_address: address, new_max_outstanding: u64
-    ) acquires CreditLine, CreditLineRegistry {
+        admin: &signer,
+        registry_address: address,
+        attestator_address: address,
+        new_max_outstanding: u64,
+        governance_address: address
+    ) acquires CreditLineRegistry {
         let admin_addr = signer::address_of(admin);
 
-        // Verify admin
-        let registry = borrow_global<CreditLineRegistry<FA>>(admin_addr);
-        assert!(admin_addr == registry.admin_address, E_NOT_AUTHORIZED);
+        // Check permission to update parameters
+        assert!(
+            governance::can_update_parameters(governance_address, admin_addr),
+            E_NOT_AUTHORIZED
+        );
 
         // Get credit line
+        let registry = borrow_global_mut<CreditLineRegistry<FA>>(registry_address);
         assert!(
-            exists<CreditLine<FA>>(attestator_address),
+            smart_table::contains(&registry.credit_lines, attestator_address),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line = borrow_global_mut<CreditLine<FA>>(attestator_address);
+        let credit_line = smart_table::borrow_mut(&mut registry.credit_lines, attestator_address);
 
         let old_max = credit_line.max_outstanding;
         credit_line.max_outstanding = new_max_outstanding;
@@ -630,20 +650,27 @@ module kach::credit_engine {
 
     /// Deactivate credit line (admin only, or automatic if trust score too low)
     public entry fun deactivate_credit_line<FA>(
-        admin: &signer, attestator_address: address, reason: String
-    ) acquires CreditLine, CreditLineRegistry {
+        admin: &signer,
+        registry_address: address,
+        attestator_address: address,
+        reason: String,
+        governance_address: address
+    ) acquires CreditLineRegistry {
         let admin_addr = signer::address_of(admin);
 
-        // Verify admin
-        let registry = borrow_global<CreditLineRegistry<FA>>(admin_addr);
-        assert!(admin_addr == registry.admin_address, E_NOT_AUTHORIZED);
+        // Check permission to manage credit lines
+        assert!(
+            governance::can_create_credit_line(governance_address, admin_addr),
+            E_NOT_AUTHORIZED
+        );
 
         // Get credit line
+        let registry = borrow_global_mut<CreditLineRegistry<FA>>(registry_address);
         assert!(
-            exists<CreditLine<FA>>(attestator_address),
+            smart_table::contains(&registry.credit_lines, attestator_address),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line = borrow_global_mut<CreditLine<FA>>(attestator_address);
+        let credit_line = smart_table::borrow_mut(&mut registry.credit_lines, attestator_address);
 
         credit_line.is_active = false;
 
@@ -658,20 +685,26 @@ module kach::credit_engine {
 
     /// Reactivate credit line (admin only)
     public entry fun reactivate_credit_line<FA>(
-        admin: &signer, attestator_address: address, governance_address: address
-    ) acquires CreditLine, CreditLineRegistry {
+        admin: &signer,
+        registry_address: address,
+        attestator_address: address,
+        governance_address: address
+    ) acquires CreditLineRegistry {
         let admin_addr = signer::address_of(admin);
 
-        // Verify admin
-        let registry = borrow_global<CreditLineRegistry<FA>>(admin_addr);
-        assert!(admin_addr == registry.admin_address, E_NOT_AUTHORIZED);
+        // Check permission to manage credit lines
+        assert!(
+            governance::can_create_credit_line(governance_address, admin_addr),
+            E_NOT_AUTHORIZED
+        );
 
         // Get credit line
+        let registry = borrow_global_mut<CreditLineRegistry<FA>>(registry_address);
         assert!(
-            exists<CreditLine<FA>>(attestator_address),
+            smart_table::contains(&registry.credit_lines, attestator_address),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line = borrow_global_mut<CreditLine<FA>>(attestator_address);
+        let credit_line = smart_table::borrow_mut(&mut registry.credit_lines, attestator_address);
 
         // Verify trust score is acceptable
         let trust_score_value =
@@ -687,12 +720,16 @@ module kach::credit_engine {
 
     /// Get available credit for a attestator
     #[view]
-    public fun get_available_credit<FA>(attestator_address: address): u64 acquires CreditLine {
-        if (!exists<CreditLine<FA>>(attestator_address)) {
+    public fun get_available_credit<FA>(
+        registry_address: address, attestator_address: address
+    ): u64 acquires CreditLineRegistry {
+        let registry = borrow_global<CreditLineRegistry<FA>>(registry_address);
+
+        if (!smart_table::contains(&registry.credit_lines, attestator_address)) {
             return 0
         };
 
-        let credit_line = borrow_global<CreditLine<FA>>(attestator_address);
+        let credit_line = smart_table::borrow(&registry.credit_lines, attestator_address);
 
         if (!credit_line.is_active) {
             return 0
@@ -705,13 +742,14 @@ module kach::credit_engine {
     /// Get credit line details
     #[view]
     public fun get_credit_line_info<FA>(
-        attestator_address: address
-    ): (u64, u64, bool, u64, u64) acquires CreditLine {
+        registry_address: address, attestator_address: address
+    ): (u64, u64, bool, u64, u64) acquires CreditLineRegistry {
+        let registry = borrow_global<CreditLineRegistry<FA>>(registry_address);
         assert!(
-            exists<CreditLine<FA>>(attestator_address),
+            smart_table::contains(&registry.credit_lines, attestator_address),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line = borrow_global<CreditLine<FA>>(attestator_address);
+        let credit_line = smart_table::borrow(&registry.credit_lines, attestator_address);
 
         (
             credit_line.max_outstanding,
@@ -725,13 +763,14 @@ module kach::credit_engine {
     /// Get credit line statistics
     #[view]
     public fun get_credit_line_stats<FA>(
-        attestator_address: address
-    ): (u64, u64, u64, u64) acquires CreditLine {
+        registry_address: address, attestator_address: address
+    ): (u64, u64, u64, u64) acquires CreditLineRegistry {
+        let registry = borrow_global<CreditLineRegistry<FA>>(registry_address);
         assert!(
-            exists<CreditLine<FA>>(attestator_address),
+            smart_table::contains(&registry.credit_lines, attestator_address),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line = borrow_global<CreditLine<FA>>(attestator_address);
+        let credit_line = smart_table::borrow(&registry.credit_lines, attestator_address);
 
         (
             credit_line.total_volume_drawn,
@@ -743,23 +782,31 @@ module kach::credit_engine {
 
     /// Check if attestator has active credit line
     #[view]
-    public fun has_active_credit_line<FA>(attestator_address: address): bool acquires CreditLine {
-        if (!exists<CreditLine<FA>>(attestator_address)) {
+    public fun has_active_credit_line<FA>(
+        registry_address: address, attestator_address: address
+    ): bool acquires CreditLineRegistry {
+        let registry = borrow_global<CreditLineRegistry<FA>>(registry_address);
+
+        if (!smart_table::contains(&registry.credit_lines, attestator_address)) {
             return false
         };
 
-        let credit_line = borrow_global<CreditLine<FA>>(attestator_address);
+        let credit_line = smart_table::borrow(&registry.credit_lines, attestator_address);
         credit_line.is_active
     }
 
     /// Get utilization percentage (bps)
     #[view]
-    public fun get_utilization_bps<FA>(attestator_address: address): u64 acquires CreditLine {
-        if (!exists<CreditLine<FA>>(attestator_address)) {
+    public fun get_utilization_bps<FA>(
+        registry_address: address, attestator_address: address
+    ): u64 acquires CreditLineRegistry {
+        let registry = borrow_global<CreditLineRegistry<FA>>(registry_address);
+
+        if (!smart_table::contains(&registry.credit_lines, attestator_address)) {
             return 0
         };
 
-        let credit_line = borrow_global<CreditLine<FA>>(attestator_address);
+        let credit_line = smart_table::borrow(&registry.credit_lines, attestator_address);
 
         if (credit_line.max_outstanding == 0) {
             return 0

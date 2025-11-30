@@ -7,6 +7,10 @@ module kach::prt {
     use aptos_framework::event;
     use aptos_framework::timestamp;
 
+    // Friend modules that can call restricted functions
+    friend kach::pool;
+    friend kach::credit_engine;
+
     /// Status assigned to every newly minted PRT while the loan is still outstanding.
     const STATUS_OPEN: u8 = 0;
     /// Status used once the attestator has fully repaid the receivable.
@@ -407,9 +411,9 @@ module kach::prt {
         (principal, interest, is_on_time)
     }
 
-    /// Mark PRT as defaulted
-    public fun default_prt<FA>(
-        _pool_signer: &signer, prt: Object<PRT<FA>>
+    /// Mark PRT as defaulted (only callable by pool or credit_engine)
+    public(friend) fun default_prt<FA>(
+        prt: Object<PRT<FA>>
     ): (u64, u64) acquires PRT {
         let prt_addr = object::object_address(&prt);
         let prt_data = borrow_global_mut<PRT<FA>>(prt_addr);
@@ -438,9 +442,9 @@ module kach::prt {
         (principal, interest)
     }
 
-    /// Mark PRT as late (for monitoring)
-    public entry fun mark_late<FA>(
-        _pool_signer: &signer, prt: Object<PRT<FA>>
+    /// Mark PRT as late (only callable by pool or credit_engine)
+    public(friend) fun mark_late<FA>(
+        prt: Object<PRT<FA>>
     ) acquires PRT {
         let prt_addr = object::object_address(&prt);
         let prt_data = borrow_global_mut<PRT<FA>>(prt_addr);
