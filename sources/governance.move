@@ -48,13 +48,13 @@ module kach::governance {
 
         // Trust score parameters
         trust_power_bps: u64, // Power for per-loan weighting (e.g., 8000 = 0.8 for concave)
-        trust_w_late_bps: u64, // Severity multiplier for late payments (e.g., 20000 = 2.0×)
-        trust_w_default_bps: u64, // Severity multiplier for defaults (e.g., 50000 = 5.0×)
+        trust_w_late_bps: u64, // Severity multiplier for late payments (e.g., 20000 = 2.0x)
+        trust_w_default_bps: u64, // Severity multiplier for defaults (e.g., 50000 = 5.0x)
         trust_decay_factor_bps: u64, // Decay factor per interval (e.g., 9500 = 0.95)
         trust_decay_interval_seconds: u64, // Decay interval in seconds (e.g., 2592000 = 30 days)
         trust_volume_weight_bps: u64, // Weight for volume score vs count (e.g., 7000 = 70% volume, 30% count)
         trust_confidence_divisor: u64, // Confidence scaling divisor (e.g., 50 loans for 1.0 bonus)
-        trust_anti_gaming_k_bps: u64, // Anti-gaming multiplier k (e.g., 15000 = 1.5×)
+        trust_anti_gaming_k_bps: u64, // Anti-gaming multiplier k (e.g., 15000 = 1.5x)
 
         // Emergency controls
         global_pause: bool,
@@ -561,9 +561,7 @@ module kach::governance {
     /// Can this address pause a pool?
     /// Allowed: admins, emergency_responders
     #[view]
-    public fun can_pause_pool(
-        governance_addr: address, addr: address
-    ): bool acquires GovernanceConfig {
+    public fun can_pause_pool(governance_addr: address, addr: address): bool acquires GovernanceConfig {
         if (!exists<GovernanceConfig>(governance_addr)) {
             return false
         };

@@ -265,13 +265,13 @@ module kach::trust_score {
         let loan_amount_u128 = (loan_amount as u128);
 
         if (status == STATUS_ON_TIME) {
-            score.good_volume = score.good_volume + loan_amount_u128;
+            score.good_volume += loan_amount_u128;
             score.on_time_count += 1;
         } else if (status == STATUS_LATE) {
-            score.late_volume = score.late_volume + loan_amount_u128;
+            score.late_volume += loan_amount_u128;
             score.late_count += 1;
         } else if (status == STATUS_DEFAULT) {
-            score.default_volume = score.default_volume + loan_amount_u128;
+            score.default_volume += loan_amount_u128;
             score.default_count += 1;
         };
 

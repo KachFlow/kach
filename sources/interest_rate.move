@@ -58,18 +58,18 @@ module kach::interest_rate {
     /// Calculate time-weighted interest for prefund loans
     ///
     /// Formula:
-    /// 1. Calculate total interest if held to maturity: principal × rate_bps / 10000
-    /// 2. For each time period, calculate: outstanding_balance × (days_elapsed / total_days) × total_interest
+    /// 1. Calculate total interest if held to maturity: principal * rate_bps / 10000
+    /// 2. For each time period, calculate: outstanding_balance * (days_elapsed / total_days) * total_interest
     /// 3. Apply early repayment discount if applicable
     ///
     /// Example:
     /// - Principal: 10,000 USDC, Tenor: 30 days, Rate: 120 bps
-    /// - Total interest at maturity: 10,000 × 120 / 10000 = 120 USDC
-    /// - Day 0-10: Outstanding = 10,000 USDC → Interest = 10,000 × (10/30) × 120 = 40 USDC
+    /// - Total interest at maturity: 10,000 * 120 / 10000 = 120 USDC
+    /// - Day 0-10: Outstanding = 10,000 USDC → Interest = 10,000 * (10/30) * 120 = 40 USDC
     /// - Repay 5,000 USDC on day 10
-    /// - Day 10-20: Outstanding = 5,000 USDC → Interest = 5,000 × (10/30) × 120 = 20 USDC
+    /// - Day 10-20: Outstanding = 5,000 USDC → Interest = 5,000 * (10/30) * 120 = 20 USDC
     /// - Repay 5,000 USDC on day 20 (early by 10 days)
-    /// - Early discount: Saved 10 days on 5,000 USDC = (5,000 × (10/30) × 120) × (1 + 0.02) = 17 USDC saved
+    /// - Early discount: Saved 10 days on 5,000 USDC = (5,000 * (10/30) * 120) * (1 + 0.02) = 17 USDC saved
     /// - Total interest: 40 + 20 - discount on early portion
     ///
     /// This function calculates interest owed for a specific time period
@@ -79,7 +79,7 @@ module kach::interest_rate {
         days_elapsed: u64,
         total_tenor_days: u64
     ): u64 {
-        // Interest = outstanding × rate × (days_elapsed / total_days)
+        // Interest = outstanding x rate x (days_elapsed / total_days)
         let daily_rate = (rate_bps as u128) * (days_elapsed as u128)
             / (total_tenor_days as u128);
         let interest = (outstanding_principal as u128) * daily_rate / 10000;
@@ -223,3 +223,4 @@ module kach::interest_rate {
         TENOR_90_DAYS
     }
 }
+

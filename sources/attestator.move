@@ -5,9 +5,6 @@ module kach::attestator {
     use aptos_framework::object::{Self, Object, ExtendRef, DeleteRef};
     use aptos_framework::event;
     use aptos_framework::timestamp;
-    use aptos_framework::fungible_asset::Metadata;
-
-    use kach::pool;
 
     /// Error when a caller without the admin/operator capability invokes an action.
     const E_NOT_AUTHORIZED: u64 = 1;
@@ -43,9 +40,6 @@ module kach::attestator {
         successful_settlements: u64,
         defaulted_settlements: u64,
         revoked_attestations: u64,
-
-        // Stake for slashing
-        stake_amount: u64,
 
         // Metadata
         metadata_uri: String, // Off-chain info about attestator
@@ -94,7 +88,6 @@ module kach::attestator {
     struct AttestatorRegistered has drop, store {
         attestator: address,
         supported_receivable_types: vector<vector<u8>>,
-        stake_amount: u64,
         timestamp: u64
     }
 
@@ -102,14 +95,6 @@ module kach::attestator {
     struct AttestatorDeactivated has drop, store {
         attestator: address,
         reason: String,
-        timestamp: u64
-    }
-
-    #[event]
-    struct AttestatorStakeUpdated has drop, store {
-        attestator: address,
-        old_stake: u64,
-        new_stake: u64,
         timestamp: u64
     }
 
@@ -138,14 +123,6 @@ module kach::attestator {
         timestamp: u64
     }
 
-    #[event]
-    struct AttestatorSlashed has drop, store {
-        attestator: address,
-        amount: u64,
-        reason: String,
-        timestamp: u64
-    }
-
     /// Initialize attestator registry
     public entry fun initialize_registry(admin: &signer) {
         let admin_addr = signer::address_of(admin);
@@ -161,15 +138,11 @@ module kach::attestator {
     }
 
     /// Register a new attestator (admin only)
-    /// Attestator must stake collateral
-    public entry fun register_attestator<FA>(
+    public entry fun register_attestator(
         admin: &signer,
-        attestator: &signer,
         attestator_address: address,
         supported_receivable_types: vector<vector<u8>>,
-        stake_amount: u64,
-        metadata_uri: String,
-        fa_metadata: Object<Metadata>
+        metadata_uri: String
     ) acquires AttestatorRegistry {
         let admin_addr = signer::address_of(admin);
 
@@ -193,7 +166,6 @@ module kach::attestator {
             successful_settlements: 0,
             defaulted_settlements: 0,
             revoked_attestations: 0,
-            stake_amount,
             metadata_uri,
             registered_at: timestamp::now_seconds(),
             last_activity: timestamp::now_seconds()
@@ -203,19 +175,10 @@ module kach::attestator {
         registry.attestator_info.push_back(attestator_info);
         registry.total_attestators += 1;
 
-        // Transfer stake from attestator to protocol (admin address as escrow)
-        pool::transfer_to_pool<FA>(
-            attestator,
-            admin_addr, // Using admin as protocol escrow
-            stake_amount,
-            fa_metadata
-        );
-
         event::emit(
             AttestatorRegistered {
                 attestator: attestator_address,
                 supported_receivable_types,
-                stake_amount,
                 timestamp: timestamp::now_seconds()
             }
         );
@@ -253,29 +216,6 @@ module kach::attestator {
 
         let attestator_info = get_attestator_info_mut(registry, attestator_address);
         attestator_info.is_active = true;
-    }
-
-    /// Attestator adds more stake
-    public entry fun add_stake(
-        admin: &signer, attestator_address: address, additional_stake: u64
-    ) acquires AttestatorRegistry {
-        let admin_addr = signer::address_of(admin);
-
-        let registry = borrow_global_mut<AttestatorRegistry>(admin_addr);
-        assert!(admin_addr == registry.admin_address, E_NOT_AUTHORIZED);
-
-        let attestator_info = get_attestator_info_mut(registry, attestator_address);
-        let old_stake = attestator_info.stake_amount;
-        attestator_info.stake_amount = old_stake + additional_stake;
-
-        event::emit(
-            AttestatorStakeUpdated {
-                attestator: attestator_address,
-                old_stake,
-                new_stake: attestator_info.stake_amount,
-                timestamp: timestamp::now_seconds()
-            }
-        );
     }
 
     /// Attest to a receivable BEFORE credit draw
@@ -504,47 +444,6 @@ module kach::attestator {
         // However, keeping revoked attestations may be useful for audit trails
     }
 
-    /// Slash attestator stake (admin only, for false attestations leading to defaults)
-    public entry fun slash_attestator<FA>(
-        admin: &signer,
-        attestator_address: address,
-        slash_amount: u64,
-        reason: String,
-        pool_address: address
-    ) acquires AttestatorRegistry {
-        let admin_addr = signer::address_of(admin);
-
-        let registry = borrow_global_mut<AttestatorRegistry>(admin_addr);
-        assert!(admin_addr == registry.admin_address, E_NOT_AUTHORIZED);
-
-        let attestator_info = get_attestator_info_mut(registry, attestator_address);
-
-        // Reduce stake
-        let actual_slash =
-            if (attestator_info.stake_amount >= slash_amount) {
-                attestator_info.stake_amount -= slash_amount;
-                slash_amount
-            } else {
-                let slashed = attestator_info.stake_amount;
-                attestator_info.stake_amount = 0;
-                slashed
-            };
-
-        // Transfer slashed amount to protocol reserve
-        // Note: The slashed funds are already held in escrow (admin address)
-        // We add them to the pool's reserve balance
-        pool::add_to_reserve<FA>(pool_address, actual_slash);
-
-        event::emit(
-            AttestatorSlashed {
-                attestator: attestator_address,
-                amount: slash_amount,
-                reason,
-                timestamp: timestamp::now_seconds()
-            }
-        );
-    }
-
     /// Internal helper to check if attestator is registered
     fun is_registered_internal(
         registry: &AttestatorRegistry, addr: address
@@ -614,15 +513,6 @@ module kach::attestator {
         };
         let info = get_attestator_info(registry, attestator);
         info.is_active
-    }
-
-    #[view]
-    public fun get_attestator_stake(
-        registry_addr: address, attestator: address
-    ): u64 acquires AttestatorRegistry {
-        let registry = borrow_global<AttestatorRegistry>(registry_addr);
-        let info = get_attestator_info(registry, attestator);
-        info.stake_amount
     }
 
     #[view]

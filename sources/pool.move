@@ -456,8 +456,8 @@ module kach::pool {
     /// Called after PRT repayment
     /// Uses dynamic capital-weighted distribution per documentation:
     /// - Multipliers calculated based on actual pool composition
-    /// - Junior multiplier = 1.0 + (protection_ratio × base_risk_premium)
-    /// - Senior multiplier = 1.0 - (junior_ratio × base_risk_premium)
+    /// - Junior multiplier = 1.0 + (protection_ratio x base_risk_premium)
+    /// - Senior multiplier = 1.0 - (junior_ratio x base_risk_premium)
     /// - Protocol fee: pulled from governance config
     public fun distribute_yield<FA>(
         pool_address: address, total_interest: u64, governance_address: address
@@ -490,8 +490,8 @@ module kach::pool {
 
         // Calculate dynamic multipliers based on pool composition
         // Protection ratio = how many dollars of senior each junior dollar protects
-        // Junior multiplier = 1.0 + (protection_ratio × base_risk_premium)
-        // Senior multiplier = 1.0 - (inverse_ratio × base_risk_premium)
+        // Junior multiplier = 1.0 + (protection_ratio x base_risk_premium)
+        // Senior multiplier = 1.0 - (inverse_ratio x base_risk_premium)
 
         let senior_share: u64;
         let junior_share: u64;
@@ -516,8 +516,8 @@ module kach::pool {
             let protection_ratio_scaled =
                 (senior_deposits as u128) * 10000 / (junior_deposits as u128);
 
-            // junior_multiplier = 1.0 + (protection_ratio × base_risk_premium)
-            // = 10000 + (protection_ratio_scaled × base_risk_premium_bps / 10000)
+            // junior_multiplier = 1.0 + (protection_ratio x base_risk_premium)
+            // = 10000 + (protection_ratio_scaled x base_risk_premium_bps / 10000)
             let junior_multiplier =
                 10000
                     + (protection_ratio_scaled * (base_risk_premium_bps as u128) / 10000);
@@ -526,15 +526,15 @@ module kach::pool {
             let inverse_ratio_scaled =
                 (junior_deposits as u128) * 10000 / (senior_deposits as u128);
 
-            // senior_multiplier = 1.0 - (inverse_ratio × base_risk_premium)
-            // = 10000 - (inverse_ratio_scaled × base_risk_premium_bps / 10000)
+            // senior_multiplier = 1.0 - (inverse_ratio x base_risk_premium)
+            // = 10000 - (inverse_ratio_scaled x base_risk_premium_bps / 10000)
             let senior_multiplier_calc =
                 (inverse_ratio_scaled * (base_risk_premium_bps as u128) / 10000);
             let senior_multiplier =
                 if (10000 > senior_multiplier_calc) {
                     10000 - senior_multiplier_calc
                 } else {
-                    1 // Minimum 0.0001× to avoid zero division
+                    1 // Minimum 0.0001x to avoid zero division
                 };
 
             // Calculate weighted capital (scaled by 10000)
@@ -720,18 +720,18 @@ module kach::pool {
             governance::get_base_risk_premium_bps(governance_address);
 
         if (junior_deposits == 0) {
-            return (10000, 0) // Senior gets 1.0×, junior N/A
+            return (10000, 0) // Senior gets 1.0x, junior N/A
         };
 
         if (senior_deposits == 0) {
-            return (0, 10000) // Junior gets 1.0×, senior N/A
+            return (0, 10000) // Junior gets 1.0x, senior N/A
         };
 
         // protection_ratio = senior / junior (scaled by 10000)
         let protection_ratio_scaled =
             (senior_deposits as u128) * 10000 / (junior_deposits as u128);
 
-        // junior_multiplier = 1.0 + (protection_ratio × base_risk_premium)
+        // junior_multiplier = 1.0 + (protection_ratio x base_risk_premium)
         let junior_multiplier =
             10000 + (protection_ratio_scaled * (base_risk_premium_bps as u128) / 10000);
 
@@ -739,7 +739,7 @@ module kach::pool {
         let inverse_ratio_scaled = (junior_deposits as u128) * 10000
             / (senior_deposits as u128);
 
-        // senior_multiplier = 1.0 - (inverse_ratio × base_risk_premium)
+        // senior_multiplier = 1.0 - (inverse_ratio x base_risk_premium)
         let senior_multiplier_calc =
             (inverse_ratio_scaled * (base_risk_premium_bps as u128) / 10000);
         let senior_multiplier =
@@ -750,3 +750,4 @@ module kach::pool {
         ((senior_multiplier as u64), (junior_multiplier as u64))
     }
 }
+
