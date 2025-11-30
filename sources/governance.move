@@ -20,6 +20,8 @@ module kach::governance {
     const E_GOVERNANCE_EXISTS: u64 = 7;
     /// Error when trying to mutate governance before initialization.
     const E_GOVERNANCE_NOT_FOUND: u64 = 8;
+    /// Error when an action is blocked because the protocol is globally paused.
+    const E_PROTOCOL_PAUSED: u64 = 9;
 
     /// Global governance configuration
     /// Stored at protocol deployer address
@@ -658,6 +660,49 @@ module kach::governance {
         };
         let config = borrow_global<GovernanceConfig>(governance_addr);
         config.global_pause
+    }
+
+    // ===== Assertion Helpers =====
+    // These functions centralize governance checks with proper error messages
+
+    /// Assert that protocol is not globally paused
+    public fun assert_not_globally_paused(governance_addr: address) acquires GovernanceConfig {
+        assert!(!is_globally_paused(governance_addr), E_PROTOCOL_PAUSED);
+    }
+
+    /// Assert that caller can pause a pool
+    public fun assert_can_pause_pool(governance_addr: address, caller: address) acquires GovernanceConfig {
+        assert!(can_pause_pool(governance_addr, caller), E_NOT_AUTHORIZED);
+    }
+
+    /// Assert that caller can unpause a pool
+    public fun assert_can_unpause_pool(governance_addr: address, caller: address) acquires GovernanceConfig {
+        assert!(can_unpause_pool(governance_addr, caller), E_NOT_AUTHORIZED);
+    }
+
+    /// Assert that caller can create a pool
+    public fun assert_can_create_pool(governance_addr: address, caller: address) acquires GovernanceConfig {
+        assert!(can_create_pool(governance_addr, caller), E_NOT_AUTHORIZED);
+    }
+
+    /// Assert that caller can create credit lines
+    public fun assert_can_create_credit_line(governance_addr: address, caller: address) acquires GovernanceConfig {
+        assert!(can_create_credit_line(governance_addr, caller), E_NOT_AUTHORIZED);
+    }
+
+    /// Assert that caller can update parameters
+    public fun assert_can_update_parameters(governance_addr: address, caller: address) acquires GovernanceConfig {
+        assert!(can_update_parameters(governance_addr, caller), E_NOT_AUTHORIZED);
+    }
+
+    /// Assert that caller can manage trust scores
+    public fun assert_can_manage_trust_scores(governance_addr: address, caller: address) acquires GovernanceConfig {
+        assert!(can_manage_trust_scores(governance_addr, caller), E_NOT_AUTHORIZED);
+    }
+
+    /// Assert that caller can manage attestators
+    public fun assert_can_manage_attestators(governance_addr: address, caller: address) acquires GovernanceConfig {
+        assert!(can_manage_attestators(governance_addr, caller), E_NOT_AUTHORIZED);
     }
 
     #[view]

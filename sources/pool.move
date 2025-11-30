@@ -14,16 +14,12 @@ module kach::pool {
     friend kach::position_nft;
     friend kach::attestator;
 
-    /// Error when caller lacks the necessary capability to mutate the pool.
-    const E_NOT_AUTHORIZED: u64 = 1;
     /// Error when an action is blocked because the pool is paused.
-    const E_POOL_PAUSED: u64 = 2;
+    const E_POOL_PAUSED: u64 = 1;
     /// Error when there is not enough liquid capital to honor a withdrawal or draw.
-    const E_INSUFFICIENT_LIQUIDITY: u64 = 3;
+    const E_INSUFFICIENT_LIQUIDITY: u64 = 2;
     /// Error when an action would push utilization above the configured maximum.
-    const E_UTILIZATION_TOO_HIGH: u64 = 4;
-    /// Error when an action is blocked because the protocol is globally paused.
-    const E_PROTOCOL_PAUSED: u64 = 5;
+    const E_UTILIZATION_TOO_HIGH: u64 = 3;
 
     // ===== Tranche Identifiers =====
 
@@ -153,10 +149,7 @@ module kach::pool {
         let admin_addr = signer::address_of(admin);
 
         // Check permission to create pool
-        assert!(
-            governance::can_create_pool(governance_address, admin_addr),
-            E_NOT_AUTHORIZED
-        );
+        governance::assert_can_create_pool(governance_address, admin_addr);
 
         let pool = Pool<FA> {
             fa_metadata,
@@ -240,10 +233,7 @@ module kach::pool {
         let caller_addr = signer::address_of(caller);
 
         // Check permission to pause pool
-        assert!(
-            governance::can_pause_pool(governance_address, caller_addr),
-            E_NOT_AUTHORIZED
-        );
+        governance::assert_can_pause_pool(governance_address, caller_addr);
 
         let pool = borrow_global_mut<Pool<FA>>(pool_addr);
         pool.is_paused = true;
@@ -259,10 +249,7 @@ module kach::pool {
         let caller_addr = signer::address_of(caller);
 
         // Check permission to unpause pool
-        assert!(
-            governance::can_unpause_pool(governance_address, caller_addr),
-            E_NOT_AUTHORIZED
-        );
+        governance::assert_can_unpause_pool(governance_address, caller_addr);
 
         let pool = borrow_global_mut<Pool<FA>>(pool_addr);
         pool.is_paused = false;

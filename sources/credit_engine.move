@@ -14,22 +14,20 @@ module kach::credit_engine {
     use kach::interest_rate;
     use kach::governance;
 
-    /// Error when caller is not authorized to mutate the credit engine state.
-    const E_NOT_AUTHORIZED: u64 = 1;
     /// Error when trying to create a credit line that already exists.
-    const E_CREDIT_LINE_EXISTS: u64 = 2;
+    const E_CREDIT_LINE_EXISTS: u64 = 1;
     /// Error when referencing a credit line that has not been created.
-    const E_CREDIT_LINE_NOT_FOUND: u64 = 3;
+    const E_CREDIT_LINE_NOT_FOUND: u64 = 2;
     /// Error when a draw exceeds the attestator's remaining limit.
-    const E_INSUFFICIENT_LIMIT: u64 = 4;
+    const E_INSUFFICIENT_LIMIT: u64 = 3;
     /// Error when an inactive credit line is used for a draw or update.
-    const E_CREDIT_LINE_INACTIVE: u64 = 5;
+    const E_CREDIT_LINE_INACTIVE: u64 = 4;
     /// Error when the underlying pool cannot supply the requested liquidity.
-    const E_POOL_INSUFFICIENT_LIQUIDITY: u64 = 6;
+    const E_POOL_INSUFFICIENT_LIQUIDITY: u64 = 5;
     /// Error when a attestator's trust score fails to meet the required threshold.
-    const E_TRUST_SCORE_TOO_LOW: u64 = 7;
-    /// Error when an action is blocked because the protocol is globally paused.
-    const E_PROTOCOL_PAUSED: u64 = 8;
+    const E_TRUST_SCORE_TOO_LOW: u64 = 6;
+    /// Error when attestation validation fails or wrong attestator attempts action.
+    const E_INVALID_ATTESTATION: u64 = 7;
 
     /// Minimum tenor for standard draws (1 day in seconds)
     const MIN_STANDARD_TENOR_SECONDS: u64 = 86400; // 1 day
@@ -144,10 +142,7 @@ module kach::credit_engine {
         let admin_addr = signer::address_of(admin);
 
         // Check permission to create credit line
-        assert!(
-            governance::can_create_credit_line(governance_address, admin_addr),
-            E_NOT_AUTHORIZED
-        );
+        governance::assert_can_create_credit_line(governance_address, admin_addr);
 
         // Get registry
         let registry = borrow_global_mut<CreditLineRegistry<FA>>(registry_address);
@@ -209,31 +204,31 @@ module kach::credit_engine {
         fa_metadata: Object<Metadata>
     ) acquires CreditLineRegistry {
         // Check if protocol is globally paused
-        assert!(!governance::is_globally_paused(governance_address), E_PROTOCOL_PAUSED);
+        governance::assert_not_globally_paused(governance_address);
 
         let attestator_addr = signer::address_of(attestator);
 
         // Get credit line
         let registry = borrow_global_mut<CreditLineRegistry<FA>>(registry_address);
         assert!(
-            smart_table::contains(&registry.credit_lines, attestator_addr),
+            registry.credit_lines.contains(attestator_addr),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line =
-            smart_table::borrow_mut(&mut registry.credit_lines, attestator_addr);
+
+        let credit_line = registry.credit_lines.borrow_mut(attestator_addr);
 
         // Verify active
         assert!(credit_line.is_active, E_CREDIT_LINE_INACTIVE);
 
         // Verify attestation is valid (not already used)
-        assert!(attestator::is_attestation_valid(attestation), E_NOT_AUTHORIZED);
+        assert!(attestator::is_attestation_valid(attestation), E_INVALID_ATTESTATION);
 
         // Get attestation details
         let (attestator_from_attestation, _receivable_type, amount, _is_used, _prt_addr) =
             attestator::get_attestation_info(attestation);
 
         // Verify attestation is for this attestator
-        assert!(attestator_from_attestation == attestator_addr, E_NOT_AUTHORIZED);
+        assert!(attestator_from_attestation == attestator_addr, E_INVALID_ATTESTATION);
 
         // Get trust score
         let trust_score_value =
@@ -265,7 +260,7 @@ module kach::credit_engine {
         assert!(
             actual_tenor >= MIN_STANDARD_TENOR_SECONDS
                 && actual_tenor <= MAX_STANDARD_TENOR_SECONDS,
-            E_NOT_AUTHORIZED
+            E_INVALID_ATTESTATION
         );
 
         let interest_rate = credit_line.default_interest_rate_bps;
@@ -327,7 +322,7 @@ module kach::credit_engine {
         fa_metadata: Object<Metadata>
     ) acquires CreditLineRegistry {
         // Check if protocol is globally paused
-        assert!(!governance::is_globally_paused(governance_address), E_PROTOCOL_PAUSED);
+        governance::assert_not_globally_paused(governance_address);
 
         let attestator_addr = signer::address_of(attestator);
 
@@ -354,7 +349,7 @@ module kach::credit_engine {
         );
 
         // Validate tenor is one of the allowed values
-        assert!(interest_rate::is_valid_tenor(tenor_seconds), E_NOT_AUTHORIZED);
+        assert!(interest_rate::is_valid_tenor(tenor_seconds), E_INVALID_ATTESTATION);
 
         // Get interest rate for the selected tenor
         let interest_rate = interest_rate::get_rate_for_tenor(tenor_seconds);
@@ -444,7 +439,7 @@ module kach::credit_engine {
             smart_table::borrow_mut(&mut registry.credit_lines, attestator_addr);
 
         // Verify attestation is valid (not already used)
-        assert!(attestator::is_attestation_valid(attestation), E_NOT_AUTHORIZED);
+        assert!(attestator::is_attestation_valid(attestation), E_INVALID_ATTESTATION);
 
         // Get attestation details
         let (
@@ -456,14 +451,14 @@ module kach::credit_engine {
         ) = attestator::get_attestation_info(attestation);
 
         // Verify attestation is for this attestator
-        assert!(attestator_from_attestation == attestator_addr, E_NOT_AUTHORIZED);
+        assert!(attestator_from_attestation == attestator_addr, E_INVALID_ATTESTATION);
 
         // Verify attestation is for this PRT
         let prt_addr = object::object_address(&prt);
-        assert!(attested_prt_addr == prt_addr, E_NOT_AUTHORIZED);
+        assert!(attested_prt_addr == prt_addr, E_INVALID_ATTESTATION);
 
         // Verify repayment amount matches attested amount
-        assert!(repayment_amount == amount_attested, E_NOT_AUTHORIZED);
+        assert!(repayment_amount == amount_attested, E_INVALID_ATTESTATION);
 
         // Mark attestation as used
         attestator::mark_attestation_used(attestation, prt_addr);
@@ -569,7 +564,7 @@ module kach::credit_engine {
         ) = prt::get_prt_info<FA>(prt);
 
         // Verify attestator owns this PRT
-        assert!(prt_attestator == attestator_addr, E_NOT_AUTHORIZED);
+        assert!(prt_attestator == attestator_addr, E_INVALID_ATTESTATION);
 
         // Calculate interest
         let interest = prt::calculate_interest<FA>(prt);
@@ -632,10 +627,7 @@ module kach::credit_engine {
         let admin_addr = signer::address_of(admin);
 
         // Check permission to update parameters
-        assert!(
-            governance::can_update_parameters(governance_address, admin_addr),
-            E_NOT_AUTHORIZED
-        );
+        governance::assert_can_update_parameters(governance_address, admin_addr);
 
         // Get credit line
         let registry = borrow_global_mut<CreditLineRegistry<FA>>(registry_address);
@@ -671,10 +663,7 @@ module kach::credit_engine {
         let admin_addr = signer::address_of(admin);
 
         // Check permission to manage credit lines
-        assert!(
-            governance::can_create_credit_line(governance_address, admin_addr),
-            E_NOT_AUTHORIZED
-        );
+        governance::assert_can_create_credit_line(governance_address, admin_addr);
 
         // Get credit line
         let registry = borrow_global_mut<CreditLineRegistry<FA>>(registry_address);
@@ -706,10 +695,7 @@ module kach::credit_engine {
         let admin_addr = signer::address_of(admin);
 
         // Check permission to manage credit lines
-        assert!(
-            governance::can_create_credit_line(governance_address, admin_addr),
-            E_NOT_AUTHORIZED
-        );
+        governance::assert_can_create_credit_line(governance_address, admin_addr);
 
         // Get credit line
         let registry = borrow_global_mut<CreditLineRegistry<FA>>(registry_address);

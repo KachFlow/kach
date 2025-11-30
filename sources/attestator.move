@@ -8,30 +8,26 @@ module kach::attestator {
 
     use kach::governance;
 
-    /// Error when a caller without the admin/operator capability invokes an action.
-    const E_NOT_AUTHORIZED: u64 = 1;
     /// Error when registering an attestator address that already exists.
-    const E_ATTESTATOR_EXISTS: u64 = 2;
+    const E_ATTESTATOR_EXISTS: u64 = 1;
     /// Error when referencing an attestator that has not been registered.
-    const E_ATTESTATOR_NOT_FOUND: u64 = 3;
+    const E_ATTESTATOR_NOT_FOUND: u64 = 2;
     /// Error when an inactive attestator attempts to act or is queried.
-    const E_ATTESTATOR_INACTIVE: u64 = 4;
+    const E_ATTESTATOR_INACTIVE: u64 = 3;
     /// Error when an attestator has not been approved for the requested action.
-    const E_ATTESTATOR_NOT_APPROVED: u64 = 5;
+    const E_ATTESTATOR_NOT_APPROVED: u64 = 4;
     /// Error when trying to attest a PRT that already has a linked attestation.
-    const E_PRT_ALREADY_ATTESTED: u64 = 6;
+    const E_PRT_ALREADY_ATTESTED: u64 = 5;
     /// Error when operating on a PRT that does not have any attestation record.
-    const E_PRT_NOT_ATTESTED: u64 = 7;
+    const E_PRT_NOT_ATTESTED: u64 = 6;
     /// Error when the receivable type specified does not match the allowed set.
-    const E_INVALID_RECEIVABLE_TYPE: u64 = 10;
+    const E_INVALID_RECEIVABLE_TYPE: u64 = 7;
     /// Error when trying to reuse an attestation that already backed a draw.
-    const E_ATTESTATION_ALREADY_USED: u64 = 11;
+    const E_ATTESTATION_ALREADY_USED: u64 = 8;
     /// Error when the attestation identifier cannot be located on-chain.
-    const E_ATTESTATION_NOT_FOUND: u64 = 12;
+    const E_ATTESTATION_NOT_FOUND: u64 = 9;
     /// Error when a settlement attempt is made by a different attestator.
-    const E_WRONG_ATTESTATOR: u64 = 13;
-    /// Error when an action is blocked because the protocol is globally paused.
-    const E_PROTOCOL_PAUSED: u64 = 14;
+    const E_WRONG_ATTESTATOR: u64 = 10;
 
     /// Attestator information
     struct AttestatorInfo has store {
@@ -147,10 +143,7 @@ module kach::attestator {
         let admin_addr = signer::address_of(admin);
 
         // Check permission to manage attestators
-        assert!(
-            governance::can_manage_attestators(governance_address, admin_addr),
-            E_NOT_AUTHORIZED
-        );
+        governance::assert_can_manage_attestators(governance_address, admin_addr);
 
         // Get registry
         let registry = borrow_global_mut<AttestatorRegistry>(registry_address);
@@ -200,10 +193,7 @@ module kach::attestator {
         let admin_addr = signer::address_of(admin);
 
         // Check permission to manage attestators
-        assert!(
-            governance::can_manage_attestators(governance_address, admin_addr),
-            E_NOT_AUTHORIZED
-        );
+        governance::assert_can_manage_attestators(governance_address, admin_addr);
 
         let registry = borrow_global_mut<AttestatorRegistry>(registry_address);
 
@@ -229,10 +219,7 @@ module kach::attestator {
         let admin_addr = signer::address_of(admin);
 
         // Check permission to manage attestators
-        assert!(
-            governance::can_manage_attestators(governance_address, admin_addr),
-            E_NOT_AUTHORIZED
-        );
+        governance::assert_can_manage_attestators(governance_address, admin_addr);
 
         let registry = borrow_global_mut<AttestatorRegistry>(registry_address);
 
@@ -253,7 +240,7 @@ module kach::attestator {
         governance_addr: address
     ): Object<Attestation> acquires AttestatorRegistry {
         // Check if protocol is globally paused
-        assert!(!governance::is_globally_paused(governance_addr), E_PROTOCOL_PAUSED);
+        governance::assert_not_globally_paused(governance_addr);
 
         let attestator_addr = signer::address_of(attestator);
 

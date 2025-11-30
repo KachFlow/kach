@@ -4,16 +4,14 @@ module kach::trust_score {
     use aptos_framework::timestamp;
     use kach::governance;
 
-    /// Error when a signer without admin rights attempts to mutate trust scores.
-    const E_NOT_AUTHORIZED: u64 = 1;
     /// Error when initializing a score for an attestator-pool pair that already has one.
-    const E_TRUST_SCORE_EXISTS: u64 = 2;
+    const E_TRUST_SCORE_EXISTS: u64 = 1;
     /// Error when attempting to access a non-existent trust score record.
-    const E_TRUST_SCORE_NOT_FOUND: u64 = 3;
+    const E_TRUST_SCORE_NOT_FOUND: u64 = 2;
     /// Error when loan amount exceeds earned capacity (anti-gaming check).
-    const E_EXCEEDS_EARNED_CAPACITY: u64 = 4;
+    const E_EXCEEDS_EARNED_CAPACITY: u64 = 3;
     /// Error when attestator is not approved for this pool.
-    const E_NOT_APPROVED_FOR_POOL: u64 = 5;
+    const E_NOT_APPROVED_FOR_POOL: u64 = 4;
 
     /// Bootstrap period: first N loans exempt from anti-gaming earned capacity check
     const BOOTSTRAP_LOAN_COUNT: u64 = 10;
@@ -119,10 +117,7 @@ module kach::trust_score {
         let admin_addr = signer::address_of(admin);
 
         // Verify admin has permission to manage trust scores
-        assert!(
-            governance::can_manage_trust_scores(governance_address, admin_addr),
-            E_NOT_AUTHORIZED
-        );
+        governance::assert_can_manage_trust_scores(governance_address, admin_addr);
 
         let registry = borrow_global_mut<TrustScoreRegistry>(governance_address);
 
@@ -185,10 +180,7 @@ module kach::trust_score {
         let admin_addr = signer::address_of(admin);
 
         // Verify admin has permission to manage trust scores
-        assert!(
-            governance::can_manage_trust_scores(governance_address, admin_addr),
-            E_NOT_AUTHORIZED
-        );
+        governance::assert_can_manage_trust_scores(governance_address, admin_addr);
 
         let _registry = borrow_global<TrustScoreRegistry>(governance_address);
 
@@ -228,10 +220,7 @@ module kach::trust_score {
         let admin_addr = signer::address_of(admin);
 
         // Verify admin has permission to manage trust scores
-        assert!(
-            governance::can_manage_trust_scores(governance_address, admin_addr),
-            E_NOT_AUTHORIZED
-        );
+        governance::assert_can_manage_trust_scores(governance_address, admin_addr);
 
         let _registry = borrow_global<TrustScoreRegistry>(governance_address);
 
