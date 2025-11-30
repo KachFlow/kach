@@ -22,12 +22,10 @@ module kach::credit_engine {
     const E_INSUFFICIENT_LIMIT: u64 = 4;
     /// Error when an inactive credit line is used for a draw or update.
     const E_CREDIT_LINE_INACTIVE: u64 = 5;
-    /// Error when the attestator does not have enough escrow posted for a draw.
-    const E_INSUFFICIENT_ESCROW: u64 = 6;
     /// Error when the underlying pool cannot supply the requested liquidity.
-    const E_POOL_INSUFFICIENT_LIQUIDITY: u64 = 7;
+    const E_POOL_INSUFFICIENT_LIQUIDITY: u64 = 6;
     /// Error when a attestator's trust score fails to meet the required threshold.
-    const E_TRUST_SCORE_TOO_LOW: u64 = 8;
+    const E_TRUST_SCORE_TOO_LOW: u64 = 7;
 
     /// Minimum tenor for standard draws (1 day in seconds)
     const MIN_STANDARD_TENOR_SECONDS: u64 = 86400; // 1 day
@@ -43,9 +41,6 @@ module kach::credit_engine {
         // Limits
         max_outstanding: u64, // Maximum total outstanding
         current_outstanding: u64, // Currently borrowed
-
-        // Escrow (held as collateral, ~5-15% of limit)
-        escrow_amount: u64,
 
         // Default tenor settings
         default_tenor_seconds: u64, // e.g., 259200 = 3 days
@@ -79,7 +74,6 @@ module kach::credit_engine {
         attestator: address,
         pool_address: address,
         max_outstanding: u64,
-        escrow_amount: u64,
         timestamp: u64
     }
 
@@ -140,7 +134,6 @@ module kach::credit_engine {
         attestator_address: address,
         pool_address: address,
         max_outstanding: u64,
-        escrow_amount: u64,
         default_tenor_seconds: u64,
         default_interest_rate_bps: u64,
         governance_address: address
@@ -171,7 +164,6 @@ module kach::credit_engine {
             pool_address,
             max_outstanding,
             current_outstanding: 0,
-            escrow_amount,
             default_tenor_seconds,
             default_interest_rate_bps,
             is_active: true,
@@ -193,7 +185,6 @@ module kach::credit_engine {
                 attestator: attestator_address,
                 pool_address,
                 max_outstanding,
-                escrow_amount,
                 timestamp: timestamp::now_seconds()
             }
         );
@@ -715,7 +706,7 @@ module kach::credit_engine {
     #[view]
     public fun get_credit_line_info<FA>(
         attestator_address: address
-    ): (u64, u64, u64, bool, u64, u64) acquires CreditLine {
+    ): (u64, u64, bool, u64, u64) acquires CreditLine {
         assert!(
             exists<CreditLine<FA>>(attestator_address),
             E_CREDIT_LINE_NOT_FOUND
@@ -725,7 +716,6 @@ module kach::credit_engine {
         (
             credit_line.max_outstanding,
             credit_line.current_outstanding,
-            credit_line.escrow_amount,
             credit_line.is_active,
             credit_line.total_draws_count,
             credit_line.total_repayments_count

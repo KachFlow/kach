@@ -81,7 +81,6 @@ public entry fun create_credit_line<FA>(
     borrower: address,
     pool_addr: address,
     max_outstanding: u64,
-    escrow_amount: u64,
     default_tenor_seconds: u64,
     default_interest_rate_bps: u64
 )
@@ -89,7 +88,6 @@ public entry fun create_credit_line<FA>(
 
 **Credit Line Parameters**:
 - `max_outstanding`: Maximum borrowing limit (e.g., $500,000)
-- `escrow_amount`: Required collateral buffer (e.g., 5-15% of limit)
 - `default_tenor_seconds`: Standard loan duration (e.g., 604800 = 7 days)
 - `default_interest_rate_bps`: Default rate (e.g., 35 bps for 7-day tenor)
 
