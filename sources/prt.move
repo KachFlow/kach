@@ -122,7 +122,6 @@ module kach::prt {
         attestator: address,
         repayment_amount: u64,
         interest_paid: u64,
-        early_discount: u64,
         outstanding_principal: u64,
         repayment_number: u64,
         timestamp: u64
@@ -278,10 +277,10 @@ module kach::prt {
 
     /// Make a partial repayment on a prefund PRT
     /// Can only be called on prefund PRTs
-    /// Returns (repayment_amount, interest_paid, early_discount, new_outstanding)
+    /// Returns (repayment_amount, interest_paid, new_outstanding)
     public fun partial_repay_prt<FA>(
         _pool_signer: &signer, prt: Object<PRT<FA>>, repayment_amount: u64
-    ): (u64, u64, u64, u64) acquires PRT {
+    ): (u64, u64, u64) acquires PRT {
         let prt_addr = object::object_address(&prt);
         let prt_data = borrow_global_mut<PRT<FA>>(prt_addr);
 
@@ -298,11 +297,9 @@ module kach::prt {
         assert!(repayment_amount <= prt_data.outstanding_principal, E_NOT_AUTHORIZED);
 
         // Calculate time-weighted interest using interest_rate module
-        // This will be imported and called properly
-        let (interest_owed, early_discount) =
+        let interest_owed =
             calculate_prefund_interest(
                 prt_data.outstanding_principal,
-                repayment_amount,
                 prt_data.interest_rate_bps,
                 prt_data.creation_timestamp,
                 prt_data.last_repayment_timestamp,
@@ -311,7 +308,7 @@ module kach::prt {
 
         // Update PRT state
         prt_data.total_repaid += repayment_amount;
-        prt_data.total_interest_paid += interest_owed - early_discount;
+        prt_data.total_interest_paid += interest_owed;
         prt_data.outstanding_principal -= repayment_amount;
         prt_data.repayment_count += 1;
         prt_data.last_repayment_timestamp = timestamp::now_seconds();
@@ -332,8 +329,7 @@ module kach::prt {
                 prt_address: prt_addr,
                 attestator,
                 repayment_amount,
-                interest_paid: interest_owed - early_discount,
-                early_discount,
+                interest_paid: interest_owed,
                 outstanding_principal: new_outstanding,
                 repayment_number,
                 timestamp: timestamp::now_seconds()
@@ -342,8 +338,7 @@ module kach::prt {
 
         (
             repayment_amount,
-            interest_owed - early_discount,
-            early_discount,
+            interest_owed,
             new_outstanding
         )
     }
@@ -352,18 +347,16 @@ module kach::prt {
     /// This uses the interest_rate module's time-weighted calculation
     fun calculate_prefund_interest(
         outstanding_principal: u64,
-        repayment_amount: u64,
         rate_bps: u64,
         creation_timestamp: u64,
         last_repayment_timestamp: u64,
         maturity_timestamp: u64
-    ): (u64, u64) {
+    ): u64 {
         // Use the interest_rate module's calculate_repayment_interest function
         use kach::interest_rate;
 
         interest_rate::calculate_repayment_interest(
             outstanding_principal,
-            repayment_amount,
             rate_bps,
             creation_timestamp,
             last_repayment_timestamp,

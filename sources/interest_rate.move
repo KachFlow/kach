@@ -23,9 +23,6 @@ module kach::interest_rate {
     /// Base interest rate for the 90-day tenor, measured in basis points.
     const RATE_90_DAYS_BPS: u64 = 320;
 
-    /// Additional interest discount awarded on any saved interest for early repayment.
-    const EARLY_REPAYMENT_DISCOUNT_BPS: u64 = 200;
-
     /// Error raised when a caller supplies a tenor outside the supported list.
     const E_INVALID_TENOR: u64 = 1;
 
@@ -60,7 +57,6 @@ module kach::interest_rate {
     /// Formula:
     /// 1. Calculate total interest if held to maturity: principal * rate_bps / 10000
     /// 2. For each time period, calculate: outstanding_balance * (days_elapsed / total_days) * total_interest
-    /// 3. Apply early repayment discount if applicable
     ///
     /// Example:
     /// - Principal: 10,000 USDC, Tenor: 30 days, Rate: 120 bps
@@ -68,9 +64,7 @@ module kach::interest_rate {
     /// - Day 0-10: Outstanding = 10,000 USDC → Interest = 10,000 * (10/30) * 120 = 40 USDC
     /// - Repay 5,000 USDC on day 10
     /// - Day 10-20: Outstanding = 5,000 USDC → Interest = 5,000 * (10/30) * 120 = 20 USDC
-    /// - Repay 5,000 USDC on day 20 (early by 10 days)
-    /// - Early discount: Saved 10 days on 5,000 USDC = (5,000 * (10/30) * 120) * (1 + 0.02) = 17 USDC saved
-    /// - Total interest: 40 + 20 - discount on early portion
+    /// - Total interest: 40 + 20 = 60 USDC
     ///
     /// This function calculates interest owed for a specific time period
     public fun calculate_time_weighted_interest(
@@ -86,41 +80,15 @@ module kach::interest_rate {
         (interest as u64)
     }
 
-    /// Calculate early repayment discount
-    /// When attestator repays early, they save interest on remaining days
-    /// Plus a bonus discount as incentive
-    public fun calculate_early_repayment_discount(
-        repayment_amount: u64,
-        rate_bps: u64,
-        days_remaining: u64,
-        total_tenor_days: u64
-    ): u64 {
-        // Calculate interest that would have accrued on this amount for remaining days
-        let saved_interest =
-            calculate_time_weighted_interest(
-                repayment_amount,
-                rate_bps,
-                days_remaining,
-                total_tenor_days
-            );
-
-        // Apply discount bonus: saved_interest * (1 + discount_bps / 10000)
-        let discount_multiplier = 10000 + EARLY_REPAYMENT_DISCOUNT_BPS;
-        let total_discount = (saved_interest as u128) * (discount_multiplier as u128)
-            / 10000;
-        (total_discount as u64)
-    }
-
     /// Calculate accrued interest for a repayment event
-    /// Returns (interest_owed, early_discount)
+    /// Returns interest_owed
     public fun calculate_repayment_interest(
         outstanding_principal: u64,
-        repayment_amount: u64,
         rate_bps: u64,
         creation_timestamp: u64,
         last_repayment_timestamp: u64,
         maturity_timestamp: u64
-    ): (u64, u64) {
+    ): u64 {
         let current_time = timestamp::now_seconds();
 
         // Calculate days since last repayment (or creation if first repayment)
@@ -140,21 +108,7 @@ module kach::interest_rate {
                 total_tenor_days
             );
 
-        // Calculate early repayment discount if repaying before maturity
-        let early_discount =
-            if (current_time < maturity_timestamp) {
-                let seconds_remaining = maturity_timestamp - current_time;
-                let days_remaining = seconds_remaining / 86400;
-
-                calculate_early_repayment_discount(
-                    repayment_amount,
-                    rate_bps,
-                    days_remaining,
-                    total_tenor_days
-                )
-            } else { 0 };
-
-        (interest_owed, early_discount)
+        interest_owed
     }
 
     /// Calculate total interest owed on a prefund loan at maturity
@@ -190,11 +144,6 @@ module kach::interest_rate {
     #[view]
     public fun get_tenor_days(tenor_seconds: u64): u64 {
         tenor_seconds / 86400
-    }
-
-    #[view]
-    public fun get_early_discount_bps(): u64 {
-        EARLY_REPAYMENT_DISCOUNT_BPS
     }
 
     /// Helper to get human-readable tenor options

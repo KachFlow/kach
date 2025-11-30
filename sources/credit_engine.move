@@ -464,9 +464,9 @@ module kach::credit_engine {
         attestator::mark_attestation_used(attestation, prt_addr);
 
         // Process partial repayment via PRT module
-        // This calculates time-weighted interest and early discounts
+        // This calculates time-weighted interest
         // Note: This requires getting the pool signer. When implemented:
-        // let (principal_paid, interest_paid, early_discount, new_outstanding) =
+        // let (principal_paid, interest_paid, new_outstanding) =
         //     prt::partial_repay_prt<FA>(pool_signer, prt, repayment_amount);
         // For now, calculate manually to avoid blocking implementation
         let principal_paid = repayment_amount;
@@ -478,7 +478,6 @@ module kach::credit_engine {
             if (prt_status == 0) { // STATUS_OPEN
                 ((prt_principal as u128) * (interest_rate as u128) / 10000 as u64)
             } else { 0u64 };
-        let _early_discount = 0u64;
         let new_outstanding =
             if (prt_principal > principal_paid) {
                 prt_principal - principal_paid
