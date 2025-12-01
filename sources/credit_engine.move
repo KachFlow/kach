@@ -29,11 +29,13 @@ module kach::credit_engine {
     /// Error when attestation validation fails or wrong attestator attempts action.
     const E_INVALID_ATTESTATION: u64 = 7;
 
-    /// Minimum tenor for standard draws (1 day in seconds)
+    /// Standard Tenor Durations
     const MIN_STANDARD_TENOR_SECONDS: u64 = 86400; // 1 day
-
-    /// Maximum tenor for standard draws (5 days in seconds)
     const MAX_STANDARD_TENOR_SECONDS: u64 = 432000; // 5 days
+
+    /// Draw type identifiers for tracking and future extensibility
+    const DRAW_TYPE_STANDARD: u8 = 0; // Standard draw with upfront attestation
+    const DRAW_TYPE_PREFUND: u8 = 1; // Prefund draw without upfront attestation
 
     /// Credit line for a attestator - tied to specific asset pool
     struct CreditLine<phantom FA> has store, drop {
@@ -88,6 +90,7 @@ module kach::credit_engine {
         interest_rate_bps: u64,
         prt_address: address,
         trust_score: u64,
+        draw_type: u8,
         timestamp: u64
     }
 
@@ -179,7 +182,7 @@ module kach::credit_engine {
             total_volume_repaid: 0
         };
 
-        smart_table::add(&mut registry.credit_lines, attestator_address, credit_line);
+        registry.credit_lines.add(attestator_address, credit_line);
         registry.total_credit_lines += 1;
 
         event::emit(
@@ -191,6 +194,87 @@ module kach::credit_engine {
             }
         );
     }
+
+    // ===== Internal Helper Functions for Draw Extensibility =====
+
+    /// Get and validate credit line exists and is active
+    /// Returns mutable reference to credit line
+    fun get_active_credit_line<FA>(
+        registry: &mut CreditLineRegistry<FA>, attestator_addr: address
+    ): &mut CreditLine<FA> {
+        assert!(
+            registry.credit_lines.contains(attestator_addr),
+            E_CREDIT_LINE_NOT_FOUND
+        );
+        let credit_line = registry.credit_lines.borrow_mut(attestator_addr);
+        assert!(credit_line.is_active, E_CREDIT_LINE_INACTIVE);
+        credit_line
+    }
+
+    /// Validate common prerequisites for any draw type
+    /// Returns trust score for the attestator
+    fun validate_draw_prerequisites<FA>(
+        credit_line: &CreditLine<FA>,
+        amount: u64,
+        min_trust_score: u64,
+        governance_address: address
+    ): u64 {
+        // Get trust score
+        let trust_score_value =
+            trust_score::get_trust_score(
+                credit_line.attestator_address,
+                credit_line.pool_address,
+                governance_address
+            );
+
+        // Verify meets minimum threshold
+        assert!(trust_score_value >= min_trust_score, E_TRUST_SCORE_TOO_LOW);
+
+        // Check limit
+        let new_outstanding = credit_line.current_outstanding + amount;
+        assert!(new_outstanding <= credit_line.max_outstanding, E_INSUFFICIENT_LIMIT);
+
+        // Check pool has liquidity
+        let available = pool::available_liquidity<FA>(credit_line.pool_address);
+        assert!(amount <= available, E_POOL_INSUFFICIENT_LIQUIDITY);
+
+        trust_score_value
+    }
+
+    /// Update credit line state after successful draw
+    fun update_draw_state<FA>(
+        credit_line: &mut CreditLine<FA>, amount: u64
+    ) {
+        credit_line.current_outstanding = credit_line.current_outstanding + amount;
+        credit_line.last_draw_timestamp = timestamp::now_seconds();
+        credit_line.total_draws_count = credit_line.total_draws_count + 1;
+        credit_line.total_volume_drawn = credit_line.total_volume_drawn + amount;
+    }
+
+    /// Execute pool-level updates and asset transfer for draw
+    fun execute_draw_transfer<FA>(
+        attestator: &signer,
+        pool_address: address,
+        attestator_addr: address,
+        amount: u64,
+        fa_metadata: Object<Metadata>
+    ) {
+        // Update pool borrowed amount
+        pool::update_borrowed<FA>(pool_address, amount, true);
+
+        // Increment PRT counter
+        pool::increment_prt_counter<FA>(pool_address);
+
+        // Transfer fungible assets from pool to attestator
+        pool::transfer_from_pool<FA>(
+            attestator,
+            attestator_addr,
+            amount,
+            fa_metadata
+        );
+    }
+
+    // ===== Public Draw Functions =====
 
     /// Draw credit from the pool
     /// REQUIRES attestation to be created first by an approved attestator
@@ -208,19 +292,11 @@ module kach::credit_engine {
 
         let attestator_addr = signer::address_of(attestator);
 
-        // Get credit line
+        // Get and validate credit line
         let registry = borrow_global_mut<CreditLineRegistry<FA>>(registry_address);
-        assert!(
-            registry.credit_lines.contains(attestator_addr),
-            E_CREDIT_LINE_NOT_FOUND
-        );
+        let credit_line = get_active_credit_line(registry, attestator_addr);
 
-        let credit_line = registry.credit_lines.borrow_mut(attestator_addr);
-
-        // Verify active
-        assert!(credit_line.is_active, E_CREDIT_LINE_INACTIVE);
-
-        // Verify attestation is valid (not already used)
+        // STANDARD DRAW SPECIFIC: Verify attestation is valid
         assert!(attestator::is_attestation_valid(attestation), E_INVALID_ATTESTATION);
 
         // Get attestation details
@@ -230,23 +306,14 @@ module kach::credit_engine {
         // Verify attestation is for this attestator
         assert!(attestator_from_attestation == attestator_addr, E_INVALID_ATTESTATION);
 
-        // Get trust score
+        // Common prerequisites (trust score, limits, liquidity)
         let trust_score_value =
-            trust_score::get_trust_score(
-                attestator_addr, credit_line.pool_address, governance_address
+            validate_draw_prerequisites(
+                credit_line,
+                amount,
+                trust_score::min_trust_score_to_draw(),
+                governance_address
             );
-        assert!(
-            trust_score_value >= trust_score::min_trust_score_to_draw(),
-            E_TRUST_SCORE_TOO_LOW
-        );
-
-        // Check limit (use attested amount)
-        let new_outstanding = credit_line.current_outstanding + amount;
-        assert!(new_outstanding <= credit_line.max_outstanding, E_INSUFFICIENT_LIMIT);
-
-        // Check pool has liquidity
-        let available = pool::available_liquidity<FA>(credit_line.pool_address);
-        assert!(amount <= available, E_POOL_INSUFFICIENT_LIQUIDITY);
 
         // Use default values if not specified (0 means use default)
         let actual_tenor =
@@ -256,7 +323,7 @@ module kach::credit_engine {
                 tenor_seconds
             };
 
-        // Validate tenor is within 1-5 day range for standard draws per documentation
+        // STANDARD DRAW SPECIFIC: Validate tenor is within 1-5 day range
         assert!(
             actual_tenor >= MIN_STANDARD_TENOR_SECONDS
                 && actual_tenor <= MAX_STANDARD_TENOR_SECONDS,
@@ -267,35 +334,24 @@ module kach::credit_engine {
 
         // Create PRT (pool signer will be created by pool module)
         // Note: In production, this would go through pool module
-        // For now, we'll emit event and update state
         let prt_address = @0x0; // Will be actual PRT address in production
 
         // Mark attestation as used (links attestation to PRT)
         attestator::mark_attestation_used(attestation, prt_address);
 
-        // Update credit line state
-        credit_line.current_outstanding = new_outstanding;
-        credit_line.last_draw_timestamp = timestamp::now_seconds();
-        credit_line.total_draws_count += 1;
-        credit_line.total_volume_drawn += amount;
+        // Update state using helper
+        update_draw_state(credit_line, amount);
 
-        // Update pool borrowed amount
-        pool::update_borrowed<FA>(credit_line.pool_address, amount, true);
-
-        // Increment PRT counter
-        pool::increment_prt_counter<FA>(credit_line.pool_address);
-
-        // Transfer fungible assets from pool to attestator
-        // Note: This requires the pool to have a resource account or signer capability
-        // For now, we assume the pool address has the necessary permissions
-        // In production, you may need to use a resource account signer
-        pool::transfer_from_pool<FA>(
-            attestator, // Using attestator as proxy; replace with pool signer when available
+        // Execute transfer using helper
+        execute_draw_transfer<FA>(
+            attestator,
+            credit_line.pool_address,
             attestator_addr,
             amount,
             fa_metadata
         );
 
+        // Emit event with draw type
         event::emit(
             CreditDrawn {
                 attestator: attestator_addr,
@@ -305,6 +361,7 @@ module kach::credit_engine {
                 interest_rate_bps: interest_rate,
                 prt_address,
                 trust_score: trust_score_value,
+                draw_type: DRAW_TYPE_STANDARD,
                 timestamp: timestamp::now_seconds()
             }
         );
@@ -326,58 +383,30 @@ module kach::credit_engine {
 
         let attestator_addr = signer::address_of(attestator);
 
-        // Get credit line
+        // Get and validate credit line
         let registry = borrow_global_mut<CreditLineRegistry<FA>>(registry_address);
-        assert!(
-            smart_table::contains(&registry.credit_lines, attestator_addr),
-            E_CREDIT_LINE_NOT_FOUND
-        );
-        let credit_line =
-            smart_table::borrow_mut(&mut registry.credit_lines, attestator_addr);
+        let credit_line = get_active_credit_line(registry, attestator_addr);
 
-        // Verify active
-        assert!(credit_line.is_active, E_CREDIT_LINE_INACTIVE);
-
-        // STRICT trust score check for prefund (>= 95)
-        let trust_score_value =
-            trust_score::get_trust_score(
-                attestator_addr, credit_line.pool_address, governance_address
-            );
-        assert!(
-            trust_score_value >= trust_score::min_trust_score_for_prefund(),
-            E_TRUST_SCORE_TOO_LOW
-        );
-
-        // Validate tenor is one of the allowed values
+        // PREFUND DRAW SPECIFIC: Validate tenor is one of the allowed values
         assert!(interest_rate::is_valid_tenor(tenor_seconds), E_INVALID_ATTESTATION);
 
         // Get interest rate for the selected tenor
         let interest_rate = interest_rate::get_rate_for_tenor(tenor_seconds);
 
-        // Check limit
-        let new_outstanding = credit_line.current_outstanding + amount;
-        assert!(new_outstanding <= credit_line.max_outstanding, E_INSUFFICIENT_LIMIT);
-
-        // Check pool has liquidity
-        let available = pool::available_liquidity<FA>(credit_line.pool_address);
-        assert!(amount <= available, E_POOL_INSUFFICIENT_LIQUIDITY);
+        // Common prerequisites (trust score >= 95 for prefund, limits, liquidity)
+        let trust_score_value =
+            validate_draw_prerequisites(
+                credit_line,
+                amount,
+                trust_score::min_trust_score_for_prefund(),
+                governance_address
+            );
 
         // Create PREFUND PRT (pool signer will be created by pool module)
-        // Note: In production, this would go through pool module
-        // For now, we'll emit event and update state
         let prt_address = @0x0; // Will be actual PRT address in production
 
-        // Update credit line state
-        credit_line.current_outstanding = new_outstanding;
-        credit_line.last_draw_timestamp = timestamp::now_seconds();
-        credit_line.total_draws_count += 1;
-        credit_line.total_volume_drawn += amount;
-
-        // Update pool borrowed amount
-        pool::update_borrowed<FA>(credit_line.pool_address, amount, true);
-
-        // Increment PRT counter
-        pool::increment_prt_counter<FA>(credit_line.pool_address);
+        // Update state using helper
+        update_draw_state(credit_line, amount);
 
         // Mint prefund PRT
         // Note: In production, get actual pool signer instead of using attestator
@@ -394,14 +423,16 @@ module kach::credit_engine {
                 credit_line.pool_address
             );
 
-        // Transfer fungible assets from pool to attestator
-        pool::transfer_from_pool<FA>(
-            attestator, // Should be pool signer in production
+        // Execute transfer using helper
+        execute_draw_transfer<FA>(
+            attestator,
+            credit_line.pool_address,
             attestator_addr,
             amount,
             fa_metadata
         );
 
+        // Emit event with draw type
         event::emit(
             CreditDrawn {
                 attestator: attestator_addr,
@@ -411,6 +442,7 @@ module kach::credit_engine {
                 interest_rate_bps: interest_rate,
                 prt_address,
                 trust_score: trust_score_value,
+                draw_type: DRAW_TYPE_PREFUND,
                 timestamp: timestamp::now_seconds()
             }
         );
@@ -432,11 +464,10 @@ module kach::credit_engine {
         // Get credit line
         let registry = borrow_global_mut<CreditLineRegistry<FA>>(registry_address);
         assert!(
-            smart_table::contains(&registry.credit_lines, attestator_addr),
+            registry.credit_lines.contains(attestator_addr),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line =
-            smart_table::borrow_mut(&mut registry.credit_lines, attestator_addr);
+        let credit_line = registry.credit_lines.borrow_mut(attestator_addr);
 
         // Verify attestation is valid (not already used)
         assert!(attestator::is_attestation_valid(attestation), E_INVALID_ATTESTATION);
@@ -545,11 +576,10 @@ module kach::credit_engine {
         // Get credit line
         let registry = borrow_global_mut<CreditLineRegistry<FA>>(registry_address);
         assert!(
-            smart_table::contains(&registry.credit_lines, attestator_addr),
+            registry.credit_lines.contains(attestator_addr),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line =
-            smart_table::borrow_mut(&mut registry.credit_lines, attestator_addr);
+        let credit_line = registry.credit_lines.borrow_mut(attestator_addr);
 
         // Get PRT details
         let (
@@ -631,11 +661,10 @@ module kach::credit_engine {
         // Get credit line
         let registry = borrow_global_mut<CreditLineRegistry<FA>>(registry_address);
         assert!(
-            smart_table::contains(&registry.credit_lines, attestator_address),
+            registry.credit_lines.contains(attestator_address),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line =
-            smart_table::borrow_mut(&mut registry.credit_lines, attestator_address);
+        let credit_line = registry.credit_lines.borrow_mut(attestator_address);
 
         let old_max = credit_line.max_outstanding;
         credit_line.max_outstanding = new_max_outstanding;
@@ -667,11 +696,10 @@ module kach::credit_engine {
         // Get credit line
         let registry = borrow_global_mut<CreditLineRegistry<FA>>(registry_address);
         assert!(
-            smart_table::contains(&registry.credit_lines, attestator_address),
+            registry.credit_lines.contains(attestator_address),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line =
-            smart_table::borrow_mut(&mut registry.credit_lines, attestator_address);
+        let credit_line = registry.credit_lines.borrow_mut(attestator_address);
 
         credit_line.is_active = false;
 
@@ -699,11 +727,10 @@ module kach::credit_engine {
         // Get credit line
         let registry = borrow_global_mut<CreditLineRegistry<FA>>(registry_address);
         assert!(
-            smart_table::contains(&registry.credit_lines, attestator_address),
+            registry.credit_lines.contains(attestator_address),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line =
-            smart_table::borrow_mut(&mut registry.credit_lines, attestator_address);
+        let credit_line = registry.credit_lines.borrow_mut(attestator_address);
 
         // Verify trust score is acceptable
         let trust_score_value =
@@ -726,13 +753,11 @@ module kach::credit_engine {
     ): u64 acquires CreditLineRegistry {
         let registry = borrow_global<CreditLineRegistry<FA>>(registry_address);
 
-        if (!smart_table::contains(&registry.credit_lines, attestator_address)) {
+        if (!registry.credit_lines.contains(attestator_address)) {
             return 0
         };
 
-        let credit_line = smart_table::borrow(
-            &registry.credit_lines, attestator_address
-        );
+        let credit_line = registry.credit_lines.borrow(attestator_address);
 
         if (!credit_line.is_active) {
             return 0
@@ -749,12 +774,10 @@ module kach::credit_engine {
     ): (u64, u64, bool, u64, u64) acquires CreditLineRegistry {
         let registry = borrow_global<CreditLineRegistry<FA>>(registry_address);
         assert!(
-            smart_table::contains(&registry.credit_lines, attestator_address),
+            registry.credit_lines.contains(attestator_address),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line = smart_table::borrow(
-            &registry.credit_lines, attestator_address
-        );
+        let credit_line = registry.credit_lines.borrow(attestator_address);
 
         (
             credit_line.max_outstanding,
@@ -772,12 +795,10 @@ module kach::credit_engine {
     ): (u64, u64, u64, u64) acquires CreditLineRegistry {
         let registry = borrow_global<CreditLineRegistry<FA>>(registry_address);
         assert!(
-            smart_table::contains(&registry.credit_lines, attestator_address),
+            registry.credit_lines.contains(attestator_address),
             E_CREDIT_LINE_NOT_FOUND
         );
-        let credit_line = smart_table::borrow(
-            &registry.credit_lines, attestator_address
-        );
+        let credit_line = registry.credit_lines.borrow(attestator_address);
 
         (
             credit_line.total_volume_drawn,
@@ -794,13 +815,11 @@ module kach::credit_engine {
     ): bool acquires CreditLineRegistry {
         let registry = borrow_global<CreditLineRegistry<FA>>(registry_address);
 
-        if (!smart_table::contains(&registry.credit_lines, attestator_address)) {
+        if (!registry.credit_lines.contains(attestator_address)) {
             return false
         };
 
-        let credit_line = smart_table::borrow(
-            &registry.credit_lines, attestator_address
-        );
+        let credit_line = registry.credit_lines.borrow(attestator_address);
         credit_line.is_active
     }
 
@@ -811,13 +830,11 @@ module kach::credit_engine {
     ): u64 acquires CreditLineRegistry {
         let registry = borrow_global<CreditLineRegistry<FA>>(registry_address);
 
-        if (!smart_table::contains(&registry.credit_lines, attestator_address)) {
+        if (!registry.credit_lines.contains(attestator_address)) {
             return 0
         };
 
-        let credit_line = smart_table::borrow(
-            &registry.credit_lines, attestator_address
-        );
+        let credit_line = registry.credit_lines.borrow(attestator_address);
 
         if (credit_line.max_outstanding == 0) {
             return 0
@@ -828,4 +845,3 @@ module kach::credit_engine {
             / (credit_line.max_outstanding as u128) as u64)
     }
 }
-

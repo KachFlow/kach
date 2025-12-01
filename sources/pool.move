@@ -739,4 +739,3 @@ module kach::pool {
         ((senior_multiplier as u64), (junior_multiplier as u64))
     }
 }
-

@@ -671,37 +671,51 @@ module kach::governance {
     }
 
     /// Assert that caller can pause a pool
-    public fun assert_can_pause_pool(governance_addr: address, caller: address) acquires GovernanceConfig {
+    public fun assert_can_pause_pool(
+        governance_addr: address, caller: address
+    ) acquires GovernanceConfig {
         assert!(can_pause_pool(governance_addr, caller), E_NOT_AUTHORIZED);
     }
 
     /// Assert that caller can unpause a pool
-    public fun assert_can_unpause_pool(governance_addr: address, caller: address) acquires GovernanceConfig {
+    public fun assert_can_unpause_pool(
+        governance_addr: address, caller: address
+    ) acquires GovernanceConfig {
         assert!(can_unpause_pool(governance_addr, caller), E_NOT_AUTHORIZED);
     }
 
     /// Assert that caller can create a pool
-    public fun assert_can_create_pool(governance_addr: address, caller: address) acquires GovernanceConfig {
+    public fun assert_can_create_pool(
+        governance_addr: address, caller: address
+    ) acquires GovernanceConfig {
         assert!(can_create_pool(governance_addr, caller), E_NOT_AUTHORIZED);
     }
 
     /// Assert that caller can create credit lines
-    public fun assert_can_create_credit_line(governance_addr: address, caller: address) acquires GovernanceConfig {
+    public fun assert_can_create_credit_line(
+        governance_addr: address, caller: address
+    ) acquires GovernanceConfig {
         assert!(can_create_credit_line(governance_addr, caller), E_NOT_AUTHORIZED);
     }
 
     /// Assert that caller can update parameters
-    public fun assert_can_update_parameters(governance_addr: address, caller: address) acquires GovernanceConfig {
+    public fun assert_can_update_parameters(
+        governance_addr: address, caller: address
+    ) acquires GovernanceConfig {
         assert!(can_update_parameters(governance_addr, caller), E_NOT_AUTHORIZED);
     }
 
     /// Assert that caller can manage trust scores
-    public fun assert_can_manage_trust_scores(governance_addr: address, caller: address) acquires GovernanceConfig {
+    public fun assert_can_manage_trust_scores(
+        governance_addr: address, caller: address
+    ) acquires GovernanceConfig {
         assert!(can_manage_trust_scores(governance_addr, caller), E_NOT_AUTHORIZED);
     }
 
     /// Assert that caller can manage attestators
-    public fun assert_can_manage_attestators(governance_addr: address, caller: address) acquires GovernanceConfig {
+    public fun assert_can_manage_attestators(
+        governance_addr: address, caller: address
+    ) acquires GovernanceConfig {
         assert!(can_manage_attestators(governance_addr, caller), E_NOT_AUTHORIZED);
     }
 
@@ -868,4 +882,3 @@ module kach::governance {
         150
     }
 }
-

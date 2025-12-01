@@ -336,11 +336,7 @@ module kach::prt {
             }
         );
 
-        (
-            repayment_amount,
-            interest_owed,
-            new_outstanding
-        )
+        (repayment_amount, interest_owed, new_outstanding)
     }
 
     /// Helper function to calculate interest for prefund PRTs
@@ -405,9 +401,7 @@ module kach::prt {
     }
 
     /// Mark PRT as defaulted (only callable by pool or credit_engine)
-    public(friend) fun default_prt<FA>(
-        prt: Object<PRT<FA>>
-    ): (u64, u64) acquires PRT {
+    public(friend) fun default_prt<FA>(prt: Object<PRT<FA>>): (u64, u64) acquires PRT {
         let prt_addr = object::object_address(&prt);
         let prt_data = borrow_global_mut<PRT<FA>>(prt_addr);
 
@@ -436,9 +430,7 @@ module kach::prt {
     }
 
     /// Mark PRT as late (only callable by pool or credit_engine)
-    public(friend) fun mark_late<FA>(
-        prt: Object<PRT<FA>>
-    ) acquires PRT {
+    public(friend) fun mark_late<FA>(prt: Object<PRT<FA>>) acquires PRT {
         let prt_addr = object::object_address(&prt);
         let prt_data = borrow_global_mut<PRT<FA>>(prt_addr);
 

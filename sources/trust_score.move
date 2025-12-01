@@ -544,4 +544,3 @@ module kach::trust_score {
         STATUS_DEFAULT
     }
 }
-
