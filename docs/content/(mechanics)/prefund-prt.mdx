@@ -148,18 +148,18 @@ Requirements checked:
 
 **Partial Repayment** (`prt.move`):
 ```move
-public entry fun repay_prefund_prt_partial<FA>(
-    borrower: &signer,
-    prt_addr: address,
-    amount: u64,
-    proof_hash: vector<u8>,
-    attestator_addr: address
-)
+public fun partial_repay_prt<FA>(
+    pool_signer: &signer,
+    prt: Object<PRT<FA>>,
+    repayment_amount: u64
+): (u64, u64, u64)
 ```
+
+Returns: `(repayment_amount, interest_paid, new_outstanding)`
 
 Requirements:
 - Amount ≤ outstanding principal
-- Attestation provided for this repayment
+- Called internally by credit_engine for attested repayments
 - Calculates time-weighted interest
 - Updates PRT status
 - Marks PRT as REPAID when fully paid
@@ -204,20 +204,25 @@ This ensures that while speed is prioritized, accountability is maintained throu
 The protocol emits detailed events for prefund operations:
 
 ```move
-struct PrefundDrawn {
+struct PRTMinted {
     prt_address: address,
-    borrower: address,
-    amount: u64,
-    tenor: u64,
-    trust_score: u64
+    attestator: address,
+    pool_address: address,
+    principal: u64,
+    interest_rate_bps: u64,
+    tenor_seconds: u64,
+    maturity_timestamp: u64,
+    timestamp: u64
 }
 
-struct PartialRepayment {
+struct PRTPartialRepayment {
     prt_address: address,
-    amount_repaid: u64,
+    attestator: address,
+    repayment_amount: u64,
     interest_paid: u64,
-    remaining_principal: u64,
-    proof_hash: vector<u8>
+    outstanding_principal: u64,
+    repayment_number: u64,
+    timestamp: u64
 }
 ```
 

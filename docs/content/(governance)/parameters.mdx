@@ -23,6 +23,7 @@ These parameters can be adjusted by governance (currently admin multisig):
 | `max_lock_duration_seconds` | deployment-specific | seconds | Maximum position lock-up period |
 | `min_trust_score_threshold` | 60 | score | Minimum trust score to draw credit (standard draws) |
 | `default_tenor_seconds` | varies | seconds | Default loan duration (7-90 days) |
+| `base_risk_premium_bps` | 3000 | bps | Base risk premium for dynamic yield calculation (30%) |
 | `global_pause` | false | boolean | Emergency pause flag |
 
 **Adjustable By**: Admin multisig
@@ -98,20 +99,26 @@ These values are hardcoded in contracts and cannot be changed without contract u
 
 ### Tranche Constants
 
-**Module**: `tranche.move`
+**Module**: `pool.move`
 
 #### Yield Distribution
 | Tranche | Share of Interest | Risk Level |
 |---------|------------------|------------|
 | Protocol Fee | 7% | N/A |
-| Junior | Capital-weighted share using multiplier (e.g., 1.3×) | Highest |
-| Senior | Capital-weighted share using multiplier (e.g., 0.8×) | Lowest |
+| Junior | Dynamically calculated based on pool composition | Highest |
+| Senior | Dynamically calculated based on pool composition | Lowest |
 
 **Distribution Method**:
+- Multipliers are dynamically calculated based on pool composition:
+  - `junior_multiplier = 1.0 + (protection_ratio × base_risk_premium)`
+  - `senior_multiplier = 1.0 - (inverse_ratio × base_risk_premium)`
+  - `protection_ratio = senior_deposits / junior_deposits`
+  - `inverse_ratio = junior_deposits / senior_deposits`
 - Compute weights: `w_senior = senior_deposits × senior_multiplier`, `w_junior = junior_deposits × junior_multiplier`
 - Total weight: `w_total = w_senior + w_junior`
 - Senior share = `(interest_after_fee × w_senior) / w_total`
 - Junior share = `(interest_after_fee × w_junior) / w_total`
+
 **Loss Waterfall**:
 - Protocol reserve absorbs first
 - Junior tranche absorbs losses next until depleted
@@ -211,6 +218,38 @@ These values are hardcoded in contracts and cannot be changed without contract u
 - Operational costs
 - Competitive positioning
 - LP yield targets
+
+### Base Risk Premium
+
+**Current**: 3000 bps (30%)
+**Range**: 2000-5000 bps (20%-50%)
+**Adjustment Method**: Governance update via `update_base_risk_premium()`
+
+The base risk premium is a critical parameter that drives dynamic yield distribution between tranches. It determines how aggressively the protocol rewards junior tranche for taking first-loss risk.
+
+**How It Works**:
+- Higher premium → Junior gets more yield relative to senior
+- Lower premium → More balanced distribution between tranches
+- Used in formulas:
+  - `junior_multiplier = 1.0 + (protection_ratio × base_risk_premium)`
+  - `senior_multiplier = 1.0 - (inverse_ratio × base_risk_premium)`
+
+**Example with 30% Base Risk Premium**:
+- Pool composition: $80M senior, $20M junior
+- Protection ratio: 80M / 20M = 4.0
+- Junior multiplier: 1.0 + (4.0 × 0.30) = 2.2×
+- Senior multiplier: 1.0 - (0.25 × 0.30) = 0.925×
+- Result: Junior earns ~2.4x more per dollar than senior
+
+**When to Adjust**:
+- **Increase** (e.g., to 40%): When junior deposits are too low, need to attract more first-loss capital
+- **Decrease** (e.g., to 20%): When junior deposits are excessive relative to senior, rebalance incentives
+- **Maintain**: When tranche composition is healthy and yields are competitive
+
+**Impact on LPs**:
+- Junior LPs: Higher premium = higher yields
+- Senior LPs: Higher premium = slightly lower yields (but more protection)
+- Protocol: Affects LP acquisition and retention in each tranche
 
 ## Monitoring Parameter Health
 

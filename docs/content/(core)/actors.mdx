@@ -75,10 +75,10 @@ Yield comes from:
 
 | Tranche | Commitment style | Illustrative APR\* | Loss absorption / notes |
 | --- | --- | --- | --- |
-| Senior | 6–18 month rolling commitments with 60–90 day notice | 8–14% | Last-loss capital; buffered by junior first-loss. Lower, steadier yield via 0.8× capital weighting. |
-| Junior | 3–6 month evergreen, callable at term end | 14–22% | First-loss capital; highest yield via 1.3× capital weighting, takes initial defaults/timing shocks. |
+| Senior | 6–18 month rolling commitments with 60–90 day notice | 8–14% | Last-loss capital; buffered by junior first-loss. Lower, steadier yield via dynamically calculated capital weighting. |
+| Junior | 3–6 month evergreen, callable at term end | 14–22% | First-loss capital; highest yield via dynamically calculated capital weighting, takes initial defaults/timing shocks. |
 
-\*Actual yields vary based on [utilization](/glossary#utilization), velocity, and capital-weighted distribution (Senior 0.8×, Junior 1.3×). Governance can adjust multipliers and other parameters per pool.
+\*Actual yields vary based on [utilization](/glossary#utilization), velocity, and dynamically calculated capital-weighted distribution. Multipliers are computed based on pool composition and base risk premium (typically resulting in junior earning 2-3× more per dollar than senior). Governance can adjust the base risk premium parameter per pool.
 
 Each deposit mints a **[Position NFT](/glossary#position-nft)** that is the depositor's only claim on a pool. The NFT metadata tracks the stablecoin (USDC in most illustrations), [tranche](/glossary#tranche) selection, number of pool shares, lock-up duration, unlock timestamp, creation timestamp, and the current [NAV](/glossary#nav)/yield multiplier. Those fields drive yield, notice rules, and loss absorption. [Position NFTs](/glossary#position-nft) are transferable, so secondary-market buyers inherit the same lock-up, [tranche](/glossary#tranche) exposure, and redemption rights. Partial exits burn the original NFT and mint two with updated pro-rata attributes, while similar positions can merge. Unlocking requires burning the NFT; redemption proceeds always flow to the **current** NFT holder, not the original depositor.
 
