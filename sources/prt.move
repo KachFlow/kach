@@ -52,7 +52,6 @@ module kach::prt {
         total_interest_paid: u64, // Total interest paid so far
         repayment_count: u64, // Number of repayments made
         last_repayment_timestamp: u64, // Last time a repayment was made (for interest calc)
-        accrued_interest: u64, // Interest accrued but not yet paid
 
         // Generic proof of underlying receivable (for standard flow)
         // For prefund, proof comes with each repayment attestation
@@ -85,6 +84,7 @@ module kach::prt {
         interest_rate_bps: u64,
         tenor_seconds: u64,
         maturity_timestamp: u64,
+        is_prefund: bool,
         timestamp: u64
     }
 
@@ -127,84 +127,9 @@ module kach::prt {
         timestamp: u64
     }
 
-    /// Mint a new PRT for a credit draw
-    /// FA type parameter ensures type safety with Pool<FA>
-    /// Only callable by pool or credit engine
-    public fun mint_prt<FA>(
-        pool_signer: &signer,
-        attestator_address: address,
-        principal: u64,
-        interest_rate_bps: u64,
-        tenor_seconds: u64,
-        trust_score: u64,
-        proof_hash: vector<u8>,
-        metadata_uri: String,
-        pool_address: address
-    ): Object<PRT<FA>> {
-        // Create object owned by pool (non-transferable)
-        let constructor_ref = object::create_object(signer::address_of(pool_signer));
-        let object_signer = object::generate_signer(&constructor_ref);
-
-        // Generate refs
-        let extend_ref = object::generate_extend_ref(&constructor_ref);
-        let delete_ref = object::generate_delete_ref(&constructor_ref);
-
-        // Make object non-transferable (soulbound to pool)
-        let transfer_ref = object::generate_transfer_ref(&constructor_ref);
-        object::disable_ungated_transfer(&transfer_ref);
-
-        let maturity_timestamp = timestamp::now_seconds() + tenor_seconds;
-        let creation_ts = timestamp::now_seconds();
-
-        let prt = PRT<FA> {
-            principal,
-            outstanding_principal: principal, // Initially equals principal
-            interest_rate_bps,
-            tenor_seconds,
-            maturity_timestamp,
-            attestator_address,
-            trust_score_snapshot: trust_score,
-            is_prefund: false, // Default to standard loan
-            requires_attested_repayments: false,
-            total_repaid: 0,
-            total_interest_paid: 0,
-            repayment_count: 0,
-            last_repayment_timestamp: creation_ts,
-            accrued_interest: 0,
-            proof_hash,
-            metadata_uri,
-            status: STATUS_OPEN,
-            creation_timestamp: creation_ts,
-            actual_repayment_timestamp: 0,
-            pool_address,
-            extend_ref,
-            delete_ref
-        };
-
-        let prt_address = object::address_from_constructor_ref(&constructor_ref);
-
-        move_to(&object_signer, prt);
-
-        // Emit event
-        event::emit(
-            PRTMinted {
-                prt_address,
-                attestator: attestator_address,
-                pool_address,
-                principal,
-                interest_rate_bps,
-                tenor_seconds,
-                maturity_timestamp,
-                timestamp: timestamp::now_seconds()
-            }
-        );
-
-        object::object_from_constructor_ref<PRT<FA>>(&constructor_ref)
-    }
-
-    /// Mint a new prefund PRT (allows partial repayments)
-    /// Similar to mint_prt but sets is_prefund = true
-    public fun mint_prefund_prt<FA>(
+    /// Internal helper to create PRT object
+    /// Extracts common logic between standard and prefund PRTs
+    fun create_prt<FA>(
         pool_signer: &signer,
         attestator_address: address,
         principal: u64,
@@ -212,7 +137,9 @@ module kach::prt {
         tenor_seconds: u64,
         trust_score: u64,
         metadata_uri: String,
-        pool_address: address
+        pool_address: address,
+        is_prefund: bool,
+        proof_hash: vector<u8>
     ): Object<PRT<FA>> {
         // Create object owned by pool (non-transferable)
         let constructor_ref = object::create_object(signer::address_of(pool_signer));
@@ -237,14 +164,13 @@ module kach::prt {
             maturity_timestamp,
             attestator_address,
             trust_score_snapshot: trust_score,
-            is_prefund: true, // PREFUND loan
-            requires_attested_repayments: true, // Every repayment needs attestation
+            is_prefund,
+            requires_attested_repayments: is_prefund, // Same as is_prefund
             total_repaid: 0,
             total_interest_paid: 0,
             repayment_count: 0,
             last_repayment_timestamp: creation_ts,
-            accrued_interest: 0,
-            proof_hash: vector::empty<u8>(), // No single proof for prefund
+            proof_hash,
             metadata_uri,
             status: STATUS_OPEN,
             creation_timestamp: creation_ts,
@@ -268,6 +194,7 @@ module kach::prt {
                 interest_rate_bps,
                 tenor_seconds,
                 maturity_timestamp,
+                is_prefund,
                 timestamp: timestamp::now_seconds()
             }
         );
@@ -275,10 +202,64 @@ module kach::prt {
         object::object_from_constructor_ref<PRT<FA>>(&constructor_ref)
     }
 
+    /// Mint a new PRT for a standard credit draw
+    /// FA type parameter ensures type safety with Pool<FA>
+    /// Only callable by pool or credit engine (friend modules)
+    public(friend) fun mint_prt<FA>(
+        pool_signer: &signer,
+        attestator_address: address,
+        principal: u64,
+        interest_rate_bps: u64,
+        tenor_seconds: u64,
+        trust_score: u64,
+        proof_hash: vector<u8>,
+        metadata_uri: String,
+        pool_address: address
+    ): Object<PRT<FA>> {
+        create_prt<FA>(
+            pool_signer,
+            attestator_address,
+            principal,
+            interest_rate_bps,
+            tenor_seconds,
+            trust_score,
+            metadata_uri,
+            pool_address,
+            false, // Not prefund
+            proof_hash
+        )
+    }
+
+    /// Mint a new prefund PRT (allows partial repayments)
+    /// Only callable by pool or credit engine (friend modules)
+    public(friend) fun mint_prefund_prt<FA>(
+        pool_signer: &signer,
+        attestator_address: address,
+        principal: u64,
+        interest_rate_bps: u64,
+        tenor_seconds: u64,
+        trust_score: u64,
+        metadata_uri: String,
+        pool_address: address
+    ): Object<PRT<FA>> {
+        create_prt<FA>(
+            pool_signer,
+            attestator_address,
+            principal,
+            interest_rate_bps,
+            tenor_seconds,
+            trust_score,
+            metadata_uri,
+            pool_address,
+            true, // Is prefund
+            vector::empty<u8>() // No single proof for prefund
+        )
+    }
+
     /// Make a partial repayment on a prefund PRT
     /// Can only be called on prefund PRTs
     /// Returns (repayment_amount, interest_paid, new_outstanding)
-    public fun partial_repay_prt<FA>(
+    public(friend) fun partial_repay_prt<FA>(
         _pool_signer: &signer, prt: Object<PRT<FA>>, repayment_amount: u64
     ): (u64, u64, u64) acquires PRT {
         let prt_addr = object::object_address(&prt);
@@ -296,7 +277,7 @@ module kach::prt {
         // Verify repayment amount doesn't exceed outstanding
         assert!(repayment_amount <= prt_data.outstanding_principal, E_NOT_AUTHORIZED);
 
-        // Calculate time-weighted interest using interest_rate module
+        // Calculate time-weighted interest for prefund PRTs
         let interest_owed =
             calculate_prefund_interest(
                 prt_data.outstanding_principal,
@@ -339,7 +320,7 @@ module kach::prt {
         (repayment_amount, interest_owed, new_outstanding)
     }
 
-    /// Helper function to calculate interest for prefund PRTs
+    /// Helper function to calculate time-weighted interest for prefund PRTs
     /// This uses the interest_rate module's time-weighted calculation
     fun calculate_prefund_interest(
         outstanding_principal: u64,
@@ -362,7 +343,8 @@ module kach::prt {
 
     /// Mark PRT as repaid and burn it
     /// Returns (principal, interest, was_on_time)
-    public fun repay_prt<FA>(_pool_signer: &signer, prt: Object<PRT<FA>>): (u64, u64, bool) acquires PRT {
+    /// Only callable by pool or credit_engine (friend modules)
+    public(friend) fun repay_prt<FA>(_pool_signer: &signer, prt: Object<PRT<FA>>): (u64, u64, bool) acquires PRT {
         let prt_addr = object::object_address(&prt);
         let prt_data = borrow_global_mut<PRT<FA>>(prt_addr);
 
@@ -372,6 +354,8 @@ module kach::prt {
             E_ALREADY_SETTLED
         );
 
+        // Standard PRTs use simple fixed rate: principal * rate_bps / 10000
+        // This is correct because standard PRTs have single repayment at maturity
         let interest = calculate_interest_internal(prt_data);
         let principal = prt_data.principal;
         let attestator = prt_data.attestator_address;
@@ -458,7 +442,8 @@ module kach::prt {
         calculate_interest_internal(prt_data)
     }
 
-    /// Internal interest calculation
+    /// Internal interest calculation for standard PRTs
+    /// Uses simple fixed rate because standard PRTs have single repayment
     fun calculate_interest_internal<FA>(prt_data: &PRT<FA>): u64 {
         // Interest = principal * rate_bps / 10000
         ((prt_data.principal as u128) * (prt_data.interest_rate_bps as u128) / 10000 as u64)
@@ -479,19 +464,25 @@ module kach::prt {
         prt_data.status == STATUS_OPEN || prt_data.status == STATUS_LATE
     }
 
-    /// Get PRT details
+    /// Get comprehensive PRT details
+    /// Returns: (attestator, principal, outstanding_principal, interest_rate_bps, maturity,
+    ///           trust_score, status, creation_ts, is_prefund, total_repaid, repayment_count)
     #[view]
     public fun get_prt_info<FA>(prt: Object<PRT<FA>>)
-        : (address, u64, u64, u64, u64, u8, u64) acquires PRT {
+        : (address, u64, u64, u64, u64, u64, u8, u64, bool, u64, u64) acquires PRT {
         let prt_data = borrow_global<PRT<FA>>(object::object_address(&prt));
         (
             prt_data.attestator_address,
             prt_data.principal,
+            prt_data.outstanding_principal,
             prt_data.interest_rate_bps,
             prt_data.maturity_timestamp,
             prt_data.trust_score_snapshot,
             prt_data.status,
-            prt_data.creation_timestamp
+            prt_data.creation_timestamp,
+            prt_data.is_prefund,
+            prt_data.total_repaid,
+            prt_data.repayment_count
         )
     }
 

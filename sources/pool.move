@@ -11,7 +11,6 @@ module kach::pool {
 
     // Friend modules that can call internal functions
     friend kach::credit_engine;
-    friend kach::position_nft;
     friend kach::attestator;
 
     /// Error when an action is blocked because the pool is paused.

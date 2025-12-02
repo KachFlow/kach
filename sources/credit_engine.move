@@ -501,7 +501,7 @@ module kach::credit_engine {
         //     prt::partial_repay_prt<FA>(pool_signer, prt, repayment_amount);
         // For now, calculate manually to avoid blocking implementation
         let principal_paid = repayment_amount;
-        let (_, prt_principal, interest_rate, _maturity, _, prt_status, _) =
+        let (_, prt_principal, _, interest_rate, _, _, prt_status, _, _, _, _) =
             prt::get_prt_info<FA>(prt);
 
         // Simple interest calculation (will be replaced with actual PRT module call)
@@ -525,7 +525,7 @@ module kach::credit_engine {
         // If fully repaid (outstanding = 0), update trust score based on timing
         if (new_outstanding == 0) {
             // Get PRT maturity to check if on-time
-            let (_, original_principal, _, maturity, _, _status, _) =
+            let (_, original_principal, _, _, maturity, _, _status, _, _, _, _) =
                 prt::get_prt_info<FA>(prt);
             let was_on_time = timestamp::now_seconds() <= maturity;
 
@@ -585,11 +585,15 @@ module kach::credit_engine {
         let (
             prt_attestator,
             principal,
+            _outstanding_principal,
             _interest_rate,
             maturity,
             _trust_score_snapshot,
             _status,
-            _
+            _creation_ts,
+            _is_prefund,
+            _total_repaid,
+            _repayment_count
         ) = prt::get_prt_info<FA>(prt);
 
         // Verify attestator owns this PRT
