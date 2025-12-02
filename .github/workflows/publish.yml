@@ -70,14 +70,38 @@ jobs:
           cd sdk
           bun run build
 
-      - name: Create Release Pull Request or Publish to npm
-        id: changesets
-        uses: changesets/action@v1
-        with:
-          publish: bun run release
-          version: bun run version
-          commit: "chore: version packages"
-          title: "chore: version packages"
+      - name: Setup git user
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version and publish
+        run: |
+          cd sdk
+
+          # Get current version
+          CURRENT_VERSION=$(bun -p "require('./package.json').version")
+
+          # Extract major.minor.patch
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+
+          # Increment minor version, reset patch to 0
+          NEW_MINOR=$((MINOR + 1))
+          NEW_VERSION="${MAJOR}.${NEW_MINOR}.0"
+
+          echo "Bumping version from $CURRENT_VERSION to $NEW_VERSION"
+
+          # Update package.json version
+          bun -e "const fs=require('fs'); const pkg=JSON.parse(fs.readFileSync('package.json')); pkg.version='$NEW_VERSION'; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2)+'\n');"
+
+          # Commit version bump
+          git add package.json
+          git commit -m "chore: bump version to $NEW_VERSION" || echo "No changes to commit"
+          git push origin ${{ github.ref_name }}
+
+          # Publish to npm
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+          bun run build
+          bun publish --access public
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
