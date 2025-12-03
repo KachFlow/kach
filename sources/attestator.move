@@ -5,50 +5,29 @@ module kach::attestator {
     use aptos_framework::object::{Self, Object, ExtendRef, DeleteRef};
     use aptos_framework::event;
     use aptos_framework::timestamp;
-    use aptos_framework::fungible_asset::Metadata;
 
-    use kach::prt::{Self, PRT};
-    use kach::pool;
-    use kach::trust_score;
-    use kach::tranche;
+    use kach::governance;
 
-    /// Error when a caller without the admin/operator capability invokes an action.
-    const E_NOT_AUTHORIZED: u64 = 1;
     /// Error when registering an attestator address that already exists.
-    const E_ATTESTATOR_EXISTS: u64 = 2;
+    const E_ATTESTATOR_EXISTS: u64 = 1;
     /// Error when referencing an attestator that has not been registered.
-    const E_ATTESTATOR_NOT_FOUND: u64 = 3;
+    const E_ATTESTATOR_NOT_FOUND: u64 = 2;
     /// Error when an inactive attestator attempts to act or is queried.
-    const E_ATTESTATOR_INACTIVE: u64 = 4;
+    const E_ATTESTATOR_INACTIVE: u64 = 3;
     /// Error when an attestator has not been approved for the requested action.
-    const E_ATTESTATOR_NOT_APPROVED: u64 = 5;
+    const E_ATTESTATOR_NOT_APPROVED: u64 = 4;
     /// Error when trying to attest a PRT that already has a linked attestation.
-    const E_PRT_ALREADY_ATTESTED: u64 = 6;
+    const E_PRT_ALREADY_ATTESTED: u64 = 5;
     /// Error when operating on a PRT that does not have any attestation record.
-    const E_PRT_NOT_ATTESTED: u64 = 7;
-    /// Error when an attestator's stake is below the minimum requirement.
-    const E_INSUFFICIENT_STAKE: u64 = 8;
-    /// Error when a settlement attempt is made by a different attestator.
-    const E_WRONG_ATTESTATOR: u64 = 9;
-    /// Error when settlement is attempted outside the allowed scenarios.
-    const E_SETTLEMENT_NOT_ALLOWED: u64 = 10;
-    /// Error when settlement happens beyond the permitted grace period.
-    const E_GRACE_PERIOD_EXPIRED: u64 = 11;
+    const E_PRT_NOT_ATTESTED: u64 = 6;
     /// Error when the receivable type specified does not match the allowed set.
-    const E_INVALID_RECEIVABLE_TYPE: u64 = 12;
+    const E_INVALID_RECEIVABLE_TYPE: u64 = 7;
     /// Error when trying to reuse an attestation that already backed a draw.
-    const E_ATTESTATION_ALREADY_USED: u64 = 13;
+    const E_ATTESTATION_ALREADY_USED: u64 = 8;
     /// Error when the attestation identifier cannot be located on-chain.
-    const E_ATTESTATION_NOT_FOUND: u64 = 14;
-
-    /// Extra window after maturity during which attestators can settle, in seconds.
-    const ATTESTATOR_GRACE_PERIOD_SECONDS: u64 = 21600;
-
-    /// Minimum stake in base units (e.g., 10,000 USDC with 6 decimals) required for attestators.
-    const MIN_ATTESTATOR_STAKE: u64 = 10000_000000;
-
-    /// Fee charged by attestators on successful settlements, expressed in basis points.
-    const ATTESTATOR_FEE_BPS: u64 = 10;
+    const E_ATTESTATION_NOT_FOUND: u64 = 9;
+    /// Error when a settlement attempt is made by a different attestator.
+    const E_WRONG_ATTESTATOR: u64 = 10;
 
     /// Attestator information
     struct AttestatorInfo has store {
@@ -62,9 +41,6 @@ module kach::attestator {
         defaulted_settlements: u64,
         revoked_attestations: u64,
 
-        // Stake for slashing
-        stake_amount: u64,
-
         // Metadata
         metadata_uri: String, // Off-chain info about attestator
         registered_at: u64,
@@ -73,7 +49,6 @@ module kach::attestator {
 
     /// Global registry of attestators
     struct AttestatorRegistry has key {
-        admin_address: address,
         attestators: vector<address>,
         total_attestators: u64,
 
@@ -86,13 +61,11 @@ module kach::attestator {
     struct Attestation has key {
         attestation_id: address, // Unique ID for this attestation
         attestator_address: address,
-        borrower_address: address,
         proof_hash: vector<u8>,
         receivable_type: vector<u8>, // "NGN_COLLECTION", "INVOICE", etc.
         amount: u64, // Expected receivable amount
         attestation_timestamp: u64,
         attestation_metadata: String, // Attestator's verification notes
-        can_delegate_settlement: bool,
 
         // PRT tracking (set when PRT is created)
         prt_address: address, // @0x0 until PRT created
@@ -100,7 +73,6 @@ module kach::attestator {
 
         // Settlement tracking
         is_settled: bool,
-        settled_by_attestator: bool,
         settlement_timestamp: u64,
 
         // Object management
@@ -113,7 +85,6 @@ module kach::attestator {
     struct AttestatorRegistered has drop, store {
         attestator: address,
         supported_receivable_types: vector<vector<u8>>,
-        stake_amount: u64,
         timestamp: u64
     }
 
@@ -125,18 +96,9 @@ module kach::attestator {
     }
 
     #[event]
-    struct AttestatorStakeUpdated has drop, store {
-        attestator: address,
-        old_stake: u64,
-        new_stake: u64,
-        timestamp: u64
-    }
-
-    #[event]
     struct ReceivableAttested has drop, store {
         attestation_id: address,
         attestator: address,
-        borrower: address,
         receivable_type: vector<u8>,
         proof_hash: vector<u8>,
         amount: u64,
@@ -158,32 +120,9 @@ module kach::attestator {
         timestamp: u64
     }
 
-    #[event]
-    struct PRTSettledByAttestator has drop, store {
-        prt_address: address,
-        attestator: address,
-        borrower: address,
-        principal: u64,
-        interest: u64,
-        attestator_fee: u64,
-        was_within_grace_period: bool,
-        timestamp: u64
-    }
-
-    #[event]
-    struct AttestatorSlashed has drop, store {
-        attestator: address,
-        amount: u64,
-        reason: String,
-        timestamp: u64
-    }
-
     /// Initialize attestator registry
     public entry fun initialize_registry(admin: &signer) {
-        let admin_addr = signer::address_of(admin);
-
         let registry = AttestatorRegistry {
-            admin_address: admin_addr,
             attestators: vector::empty<address>(),
             total_attestators: 0,
             attestator_info: vector::empty<AttestatorInfo>()
@@ -193,29 +132,26 @@ module kach::attestator {
     }
 
     /// Register a new attestator (admin only)
-    /// Attestator must stake collateral
-    public entry fun register_attestator<FA>(
+    public entry fun register_attestator(
         admin: &signer,
-        attestator: &signer,
+        registry_address: address,
         attestator_address: address,
         supported_receivable_types: vector<vector<u8>>,
-        stake_amount: u64,
         metadata_uri: String,
-        fa_metadata: Object<Metadata>
+        governance_address: address
     ) acquires AttestatorRegistry {
         let admin_addr = signer::address_of(admin);
 
-        // Verify admin
-        let registry = borrow_global_mut<AttestatorRegistry>(admin_addr);
-        assert!(admin_addr == registry.admin_address, E_NOT_AUTHORIZED);
+        // Check permission to manage attestators
+        governance::assert_can_manage_attestators(governance_address, admin_addr);
+
+        // Get registry
+        let registry = borrow_global_mut<AttestatorRegistry>(registry_address);
 
         // Verify not already registered
         assert!(
             !is_registered_internal(registry, attestator_address), E_ATTESTATOR_EXISTS
         );
-
-        // Verify stake
-        assert!(stake_amount >= MIN_ATTESTATOR_STAKE, E_INSUFFICIENT_STAKE);
 
         // Verify at least one receivable type
         assert!(supported_receivable_types.length() > 0, E_INVALID_RECEIVABLE_TYPE);
@@ -228,7 +164,6 @@ module kach::attestator {
             successful_settlements: 0,
             defaulted_settlements: 0,
             revoked_attestations: 0,
-            stake_amount,
             metadata_uri,
             registered_at: timestamp::now_seconds(),
             last_activity: timestamp::now_seconds()
@@ -238,19 +173,10 @@ module kach::attestator {
         registry.attestator_info.push_back(attestator_info);
         registry.total_attestators += 1;
 
-        // Transfer stake from attestator to protocol (admin address as escrow)
-        pool::transfer_to_pool<FA>(
-            attestator,
-            admin_addr, // Using admin as protocol escrow
-            stake_amount,
-            fa_metadata
-        );
-
         event::emit(
             AttestatorRegistered {
                 attestator: attestator_address,
                 supported_receivable_types,
-                stake_amount,
                 timestamp: timestamp::now_seconds()
             }
         );
@@ -258,12 +184,18 @@ module kach::attestator {
 
     /// Deactivate an attestator (admin only)
     public entry fun deactivate_attestator(
-        admin: &signer, attestator_address: address, reason: String
+        admin: &signer,
+        registry_address: address,
+        attestator_address: address,
+        reason: String,
+        governance_address: address
     ) acquires AttestatorRegistry {
         let admin_addr = signer::address_of(admin);
 
-        let registry = borrow_global_mut<AttestatorRegistry>(admin_addr);
-        assert!(admin_addr == registry.admin_address, E_NOT_AUTHORIZED);
+        // Check permission to manage attestators
+        governance::assert_can_manage_attestators(governance_address, admin_addr);
+
+        let registry = borrow_global_mut<AttestatorRegistry>(registry_address);
 
         let attestator_info = get_attestator_info_mut(registry, attestator_address);
         attestator_info.is_active = false;
@@ -279,38 +211,20 @@ module kach::attestator {
 
     /// Reactivate an attestator (admin only)
     public entry fun reactivate_attestator(
-        admin: &signer, attestator_address: address
+        admin: &signer,
+        registry_address: address,
+        attestator_address: address,
+        governance_address: address
     ) acquires AttestatorRegistry {
         let admin_addr = signer::address_of(admin);
 
-        let registry = borrow_global_mut<AttestatorRegistry>(admin_addr);
-        assert!(admin_addr == registry.admin_address, E_NOT_AUTHORIZED);
+        // Check permission to manage attestators
+        governance::assert_can_manage_attestators(governance_address, admin_addr);
+
+        let registry = borrow_global_mut<AttestatorRegistry>(registry_address);
 
         let attestator_info = get_attestator_info_mut(registry, attestator_address);
         attestator_info.is_active = true;
-    }
-
-    /// Attestator adds more stake
-    public entry fun add_stake(
-        admin: &signer, attestator_address: address, additional_stake: u64
-    ) acquires AttestatorRegistry {
-        let admin_addr = signer::address_of(admin);
-
-        let registry = borrow_global_mut<AttestatorRegistry>(admin_addr);
-        assert!(admin_addr == registry.admin_address, E_NOT_AUTHORIZED);
-
-        let attestator_info = get_attestator_info_mut(registry, attestator_address);
-        let old_stake = attestator_info.stake_amount;
-        attestator_info.stake_amount = old_stake + additional_stake;
-
-        event::emit(
-            AttestatorStakeUpdated {
-                attestator: attestator_address,
-                old_stake,
-                new_stake: attestator_info.stake_amount,
-                timestamp: timestamp::now_seconds()
-            }
-        );
     }
 
     /// Attest to a receivable BEFORE credit draw
@@ -318,14 +232,16 @@ module kach::attestator {
     /// Returns Object<Attestation> that can be used for credit draw
     public fun attest_receivable(
         attestator: &signer,
-        borrower_address: address,
         proof_hash: vector<u8>,
         receivable_type: vector<u8>,
         amount: u64,
         attestation_metadata: String,
-        can_delegate_settlement: bool,
-        registry_addr: address
+        registry_addr: address,
+        governance_addr: address
     ): Object<Attestation> acquires AttestatorRegistry {
+        // Check if protocol is globally paused
+        governance::assert_not_globally_paused(governance_addr);
+
         let attestator_addr = signer::address_of(attestator);
 
         // Verify attestator is registered and active
@@ -356,17 +272,14 @@ module kach::attestator {
         let attestation = Attestation {
             attestation_id,
             attestator_address: attestator_addr,
-            borrower_address,
             proof_hash,
             receivable_type,
             amount,
             attestation_timestamp: timestamp::now_seconds(),
             attestation_metadata,
-            can_delegate_settlement,
             prt_address: @0x0, // Will be set when PRT is created
             is_used: false,
             is_settled: false,
-            settled_by_attestator: false,
             settlement_timestamp: 0,
             extend_ref,
             delete_ref
@@ -382,7 +295,6 @@ module kach::attestator {
             ReceivableAttested {
                 attestation_id,
                 attestator: attestator_addr,
-                borrower: borrower_address,
                 receivable_type,
                 proof_hash,
                 amount,
@@ -394,11 +306,10 @@ module kach::attestator {
     }
 
     /// Attest to a repayment for prefund loans
-    /// This is used when borrower makes a partial repayment and attestator verifies they collected the receivable
+    /// This is used when attestator verifies they collected the receivable
     /// Returns Object<Attestation> that can be used for partial_repayment()
     public fun attest_repayment(
         attestator: &signer,
-        borrower_address: address,
         prt_address: address, // Which PRT this repayment is for
         proof_hash: vector<u8>, // Proof of receivable collection (e.g., NGN transfer receipt)
         receivable_type: vector<u8>,
@@ -436,17 +347,14 @@ module kach::attestator {
         let attestation = Attestation {
             attestation_id,
             attestator_address: attestator_addr,
-            borrower_address,
             proof_hash,
             receivable_type,
             amount: amount_collected,
             attestation_timestamp: timestamp::now_seconds(),
             attestation_metadata,
-            can_delegate_settlement: false, // Repayment attestations don't delegate
             prt_address, // Already know which PRT
             is_used: false, // Will be marked used when repayment processed
             is_settled: false,
-            settled_by_attestator: false,
             settlement_timestamp: 0,
             extend_ref,
             delete_ref
@@ -462,7 +370,6 @@ module kach::attestator {
             ReceivableAttested {
                 attestation_id,
                 attestator: attestator_addr,
-                borrower: borrower_address,
                 receivable_type,
                 proof_hash,
                 amount: amount_collected,
@@ -500,7 +407,7 @@ module kach::attestator {
         );
     }
 
-    /// Revoke an attestation (if borrower provided false info)
+    /// Revoke an attestation (if attestator determines it's invalid)
     /// This marks the attestation as invalid
     /// Can only revoke if not yet used for credit draw
     public entry fun revoke_attestation(
@@ -543,169 +450,6 @@ module kach::attestator {
         // let delete_ref = &attestation_data.delete_ref;
         // object::delete(delete_ref);
         // However, keeping revoked attestations may be useful for audit trails
-    }
-
-    /// Settle PRT on behalf of borrower (attestator provides funds)
-    /// This is the key function where attestator collects off-chain and settles on-chain
-    /// Attestator must provide the attestation object they created
-    public entry fun settle_on_behalf<FA>(
-        attestator: &signer,
-        prt: Object<PRT<FA>>,
-        attestation: Object<Attestation>,
-        registry_addr: address,
-        governance_addr: address,
-        fa_metadata: Object<Metadata>
-    ) acquires Attestation, AttestatorRegistry {
-        let attestator_addr = signer::address_of(attestator);
-        let prt_addr = object::object_address(&prt);
-        let attestation_addr = object::object_address(&attestation);
-
-        // Verify attestation exists
-        assert!(exists<Attestation>(attestation_addr), E_ATTESTATION_NOT_FOUND);
-        let attestation_data = borrow_global_mut<Attestation>(attestation_addr);
-
-        // Verify attestation is for this PRT
-        assert!(attestation_data.prt_address == prt_addr, E_WRONG_ATTESTATOR);
-
-        // Verify caller is the attestator
-        assert!(
-            attestation_data.attestator_address == attestator_addr, E_WRONG_ATTESTATOR
-        );
-
-        // Verify can delegate settlement
-        assert!(attestation_data.can_delegate_settlement, E_SETTLEMENT_NOT_ALLOWED);
-
-        // Verify not already settled
-        assert!(!attestation_data.is_settled, E_SETTLEMENT_NOT_ALLOWED);
-
-        // Get PRT details
-        let (
-            borrower,
-            principal,
-            _interest_rate,
-            maturity,
-            _trust_score,
-            _status,
-            _creation_ts
-        ) = prt::get_prt_info<FA>(prt);
-
-        // Get pool address from PRT
-        let pool_address = prt::get_pool_address<FA>(prt);
-
-        // Calculate interest and attestator fee
-        let interest = prt::calculate_interest<FA>(prt);
-        let attestator_fee = (principal as u128) * (ATTESTATOR_FEE_BPS as u128) / 10000;
-        let attestator_fee_u64 = (attestator_fee as u64);
-
-        // Check if within grace period
-        let current_time = timestamp::now_seconds();
-        let grace_deadline = maturity + ATTESTATOR_GRACE_PERIOD_SECONDS;
-        let was_within_grace = current_time <= grace_deadline;
-
-        // Determine if on-time for trust score purposes
-        // Attestator settlements within grace period count as on-time for borrower
-        let is_on_time_for_borrower = current_time <= grace_deadline;
-
-        // Transfer funds from attestator to pool
-        let total_due = principal + interest;
-        pool::transfer_to_pool<FA>(
-            attestator,
-            pool_address,
-            total_due,
-            fa_metadata
-        );
-
-        // Update attestation
-        attestation_data.is_settled = true;
-        attestation_data.settled_by_attestator = true;
-        attestation_data.settlement_timestamp = current_time;
-
-        // Update attestator stats
-        let registry = borrow_global_mut<AttestatorRegistry>(registry_addr);
-        let attestator_info = get_attestator_info_mut(registry, attestator_addr);
-
-        if (was_within_grace) {
-            attestator_info.successful_settlements += 1;
-        } else {
-            // Late settlement - attestator still settles but it's marked as late
-            attestator_info.successful_settlements += 1;
-        };
-
-        attestator_info.last_activity = timestamp::now_seconds();
-
-        // Update borrower trust score
-        // If attestator settles within grace period, borrower gets credit for on-time payment
-        let status = if (is_on_time_for_borrower) { 0u8 }
-        else { 1u8 }; // STATUS_ON_TIME or STATUS_LATE
-        trust_score::update_trust_score(borrower, principal, status, governance_addr);
-
-        // Get pool address from PRT
-        let pool_address = prt::get_pool_address<FA>(prt);
-
-        // Update pool borrowed amount
-        pool::update_borrowed<FA>(pool_address, principal, false);
-
-        event::emit(
-            PRTSettledByAttestator {
-                prt_address: prt_addr,
-                attestator: attestator_addr,
-                borrower,
-                principal,
-                interest,
-                attestator_fee: attestator_fee_u64,
-                was_within_grace_period: was_within_grace,
-                timestamp: current_time
-            }
-        );
-
-        // Distribute yield to tranches
-        tranche::distribute_yield<FA>(pool_address, interest, governance_addr);
-    }
-
-    /// Slash attestator stake (admin only, for false attestations leading to defaults)
-    public entry fun slash_attestator<FA>(
-        admin: &signer,
-        attestator_address: address,
-        slash_amount: u64,
-        reason: String,
-        pool_address: address
-    ) acquires AttestatorRegistry {
-        let admin_addr = signer::address_of(admin);
-
-        let registry = borrow_global_mut<AttestatorRegistry>(admin_addr);
-        assert!(admin_addr == registry.admin_address, E_NOT_AUTHORIZED);
-
-        let attestator_info = get_attestator_info_mut(registry, attestator_address);
-
-        // Reduce stake
-        let actual_slash =
-            if (attestator_info.stake_amount >= slash_amount) {
-                attestator_info.stake_amount -= slash_amount;
-                slash_amount
-            } else {
-                let slashed = attestator_info.stake_amount;
-                attestator_info.stake_amount = 0;
-                slashed
-            };
-
-        // Transfer slashed amount to protocol reserve
-        // Note: The slashed funds are already held in escrow (admin address)
-        // We add them to the pool's reserve balance
-        pool::add_to_reserve<FA>(pool_address, actual_slash);
-
-        event::emit(
-            AttestatorSlashed {
-                attestator: attestator_address,
-                amount: slash_amount,
-                reason,
-                timestamp: timestamp::now_seconds()
-            }
-        );
-
-        // If stake falls below minimum, deactivate
-        if (attestator_info.stake_amount < MIN_ATTESTATOR_STAKE) {
-            attestator_info.is_active = false;
-        };
     }
 
     /// Internal helper to check if attestator is registered
@@ -780,15 +524,6 @@ module kach::attestator {
     }
 
     #[view]
-    public fun get_attestator_stake(
-        registry_addr: address, attestator: address
-    ): u64 acquires AttestatorRegistry {
-        let registry = borrow_global<AttestatorRegistry>(registry_addr);
-        let info = get_attestator_info(registry, attestator);
-        info.stake_amount
-    }
-
-    #[view]
     public fun get_attestator_stats(
         registry_addr: address, attestator: address
     ): (u64, u64, u64, u64) acquires AttestatorRegistry {
@@ -805,16 +540,14 @@ module kach::attestator {
     #[view]
     public fun get_attestation_info(
         attestation: Object<Attestation>
-    ): (address, address, vector<u8>, u64, bool, bool, address) acquires Attestation {
+    ): (address, vector<u8>, u64, bool, address) acquires Attestation {
         let attestation_addr = object::object_address(&attestation);
         assert!(exists<Attestation>(attestation_addr), E_ATTESTATION_NOT_FOUND);
         let attestation_data = borrow_global<Attestation>(attestation_addr);
         (
-            attestation_data.borrower_address,
             attestation_data.attestator_address,
             attestation_data.receivable_type,
             attestation_data.amount,
-            attestation_data.can_delegate_settlement,
             attestation_data.is_used,
             attestation_data.prt_address
         )
@@ -855,20 +588,5 @@ module kach::attestator {
         };
         let registry = borrow_global<AttestatorRegistry>(registry_addr);
         registry.attestators
-    }
-
-    #[view]
-    public fun get_grace_period_seconds(): u64 {
-        ATTESTATOR_GRACE_PERIOD_SECONDS
-    }
-
-    #[view]
-    public fun get_attestator_fee_bps(): u64 {
-        ATTESTATOR_FEE_BPS
-    }
-
-    #[view]
-    public fun get_min_stake(): u64 {
-        MIN_ATTESTATOR_STAKE
     }
 }

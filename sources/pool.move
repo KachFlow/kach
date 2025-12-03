@@ -7,27 +7,25 @@ module kach::pool {
     use aptos_framework::event;
     use aptos_framework::timestamp;
 
+    use kach::governance;
+
     // Friend modules that can call internal functions
-    friend kach::tranche;
     friend kach::credit_engine;
-    friend kach::position_nft;
     friend kach::attestator;
 
-    /// Identifier used for senior tranche accounting.
-    const TRANCHE_SENIOR: u8 = 0;
-    /// Identifier used for junior tranche accounting.
-    const TRANCHE_JUNIOR: u8 = 1;
-
-    /// Error when caller lacks the necessary capability to mutate the pool.
-    const E_NOT_AUTHORIZED: u64 = 1;
     /// Error when an action is blocked because the pool is paused.
-    const E_POOL_PAUSED: u64 = 2;
+    const E_POOL_PAUSED: u64 = 1;
     /// Error when there is not enough liquid capital to honor a withdrawal or draw.
-    const E_INSUFFICIENT_LIQUIDITY: u64 = 3;
+    const E_INSUFFICIENT_LIQUIDITY: u64 = 2;
     /// Error when an action would push utilization above the configured maximum.
-    const E_UTILIZATION_TOO_HIGH: u64 = 4;
-    /// Error when provided tranche allocation parameters are invalid or misaligned.
-    const E_INVALID_TRANCHE_ALLOCATION: u64 = 5;
+    const E_UTILIZATION_TOO_HIGH: u64 = 3;
+
+    // ===== Tranche Identifiers =====
+
+    /// Identifier for the junior tranche
+    const TRANCHE_JUNIOR: u8 = 1;
+    /// Identifier for the senior tranche
+    const TRANCHE_SENIOR: u8 = 0;
 
     /// Pool configuration and state for a specific fungible asset
     /// FA is phantom type representing the asset (e.g., USDC, USDT)
@@ -48,27 +46,19 @@ module kach::pool {
         senior_nav_multiplier: u128,
         junior_nav_multiplier: u128,
 
-        // Target allocation (in basis points, sum to 10000)
-        senior_target_bps: u64,
-        junior_target_bps: u64,
-
         // Utilization cap (e.g., 8000 = 80% max utilization)
         max_utilization_bps: u64,
 
         // Protocol reserve
         protocol_reserve_balance: u64,
-        protocol_reserve_target_bps: u64, // Target as % of TVL
-        protocol_fee_bps: u64, // % of interest to reserve (e.g., 500 = 5%)
+        protocol_fee_bps: u64, // % of interest to reserve (e.g., 700 = 7%)
 
         // Counters
         total_position_nfts_minted: u64,
         total_prts_minted: u64,
 
         // State
-        is_paused: bool,
-
-        // Admin
-        admin_address: address
+        is_paused: bool
     }
 
     /// Events
@@ -101,7 +91,7 @@ module kach::pool {
 
     #[event]
     struct CreditDrawn has drop, store {
-        borrower: address,
+        attestator: address,
         amount: u64,
         prt_address: address,
         timestamp: u64
@@ -109,10 +99,39 @@ module kach::pool {
 
     #[event]
     struct CreditRepaid has drop, store {
-        borrower: address,
+        attestator: address,
         principal: u64,
         interest: u64,
         prt_address: address,
+        timestamp: u64
+    }
+
+    #[event]
+    struct YieldDistributed has drop, store {
+        pool_address: address,
+        total_interest: u64,
+        protocol_reserve_share: u64,
+        senior_share: u64,
+        junior_share: u64,
+        timestamp: u64
+    }
+
+    #[event]
+    struct LossAllocated has drop, store {
+        pool_address: address,
+        total_loss: u64,
+        protocol_reserve_absorbed: u64,
+        junior_absorbed: u64,
+        senior_absorbed: u64,
+        timestamp: u64
+    }
+
+    #[event]
+    struct NAVUpdated has drop, store {
+        pool_address: address,
+        tranche: u8,
+        old_multiplier: u128,
+        new_multiplier: u128,
         timestamp: u64
     }
 
@@ -120,20 +139,16 @@ module kach::pool {
     public entry fun initialize_pool<FA>(
         admin: &signer,
         fa_metadata: Object<Metadata>,
-        senior_target_bps: u64,
-        junior_target_bps: u64,
         max_utilization_bps: u64,
-        protocol_reserve_target_bps: u64,
-        protocol_fee_bps: u64
+        governance_address: address
     ) {
         use aptos_framework::fungible_asset;
+        use kach::governance;
+
         let admin_addr = signer::address_of(admin);
 
-        // Validate tranche allocation sums to 100%
-        assert!(
-            senior_target_bps + junior_target_bps == 10000,
-            E_INVALID_TRANCHE_ALLOCATION
-        );
+        // Check permission to create pool
+        governance::assert_can_create_pool(governance_address, admin_addr);
 
         let pool = Pool<FA> {
             fa_metadata,
@@ -143,16 +158,12 @@ module kach::pool {
             junior_deposits: 0,
             senior_nav_multiplier: 1_000_000_000_000_000_000, // 1e18
             junior_nav_multiplier: 1_000_000_000_000_000_000,
-            senior_target_bps,
-            junior_target_bps,
             max_utilization_bps,
             protocol_reserve_balance: 0,
-            protocol_reserve_target_bps,
-            protocol_fee_bps,
+            protocol_fee_bps: governance::get_protocol_fee_bps(governance_address),
             total_position_nfts_minted: 0,
             total_prts_minted: 0,
-            is_paused: false,
-            admin_address: admin_addr
+            is_paused: false
         };
 
         move_to(admin, pool);
@@ -171,6 +182,16 @@ module kach::pool {
                 timestamp: timestamp::now_seconds()
             }
         );
+    }
+
+    /// Get the senior tranche identifier
+    public fun tranche_senior(): u8 {
+        TRANCHE_SENIOR
+    }
+
+    /// Get the junior tranche identifier
+    public fun tranche_junior(): u8 {
+        TRANCHE_JUNIOR
     }
 
     /// Get current pool utilization in basis points
@@ -202,16 +223,34 @@ module kach::pool {
     }
 
     /// Pause pool (emergency only)
-    public entry fun pause_pool<FA>(admin: &signer, pool_addr: address) acquires Pool {
+    /// Can be called by admins or emergency responders
+    public entry fun pause_pool<FA>(
+        caller: &signer, pool_addr: address, governance_address: address
+    ) acquires Pool {
+        use kach::governance;
+
+        let caller_addr = signer::address_of(caller);
+
+        // Check permission to pause pool
+        governance::assert_can_pause_pool(governance_address, caller_addr);
+
         let pool = borrow_global_mut<Pool<FA>>(pool_addr);
-        assert!(signer::address_of(admin) == pool.admin_address, E_NOT_AUTHORIZED);
         pool.is_paused = true;
     }
 
     /// Unpause pool
-    public entry fun unpause_pool<FA>(admin: &signer, pool_addr: address) acquires Pool {
+    /// Can only be called by admins (not emergency responders)
+    public entry fun unpause_pool<FA>(
+        caller: &signer, pool_addr: address, governance_address: address
+    ) acquires Pool {
+        use kach::governance;
+
+        let caller_addr = signer::address_of(caller);
+
+        // Check permission to unpause pool
+        governance::assert_can_unpause_pool(governance_address, caller_addr);
+
         let pool = borrow_global_mut<Pool<FA>>(pool_addr);
-        assert!(signer::address_of(admin) == pool.admin_address, E_NOT_AUTHORIZED);
         pool.is_paused = false;
     }
 
@@ -397,5 +436,305 @@ module kach::pool {
         let symbol = fungible_asset::symbol(pool.fa_metadata);
         let name = fungible_asset::name(pool.fa_metadata);
         (symbol, name)
+    }
+
+    // ===== Tranche Functions =====
+
+    /// Distribute yield from interest to tranches
+    /// Called after PRT repayment
+    /// Uses dynamic capital-weighted distribution per documentation:
+    /// - Multipliers calculated based on actual pool composition
+    /// - Junior multiplier = 1.0 + (protection_ratio x base_risk_premium)
+    /// - Senior multiplier = 1.0 - (junior_ratio x base_risk_premium)
+    /// - Protocol fee: pulled from governance config
+    public fun distribute_yield<FA>(
+        pool_address: address, total_interest: u64, governance_address: address
+    ) acquires Pool {
+        // Sync protocol fee with governance before applying
+        let protocol_fee_bps = governance::get_protocol_fee_bps(governance_address);
+        {
+            let pool = borrow_global_mut<Pool<FA>>(pool_address);
+            pool.protocol_fee_bps = protocol_fee_bps;
+        };
+
+        // Calculate protocol reserve share from governance-configured fee
+        let protocol_share = (total_interest as u128) * (protocol_fee_bps as u128)
+            / 10000;
+        let protocol_share_u64 = (protocol_share as u64);
+
+        // Add to protocol reserve
+        add_to_reserve<FA>(pool_address, protocol_share_u64);
+
+        // Remaining yield for tranches after protocol fee
+        let tranche_yield = total_interest - protocol_share_u64;
+
+        // Get actual tranche deposits
+        let senior_deposits = get_tranche_deposits<FA>(pool_address, TRANCHE_SENIOR);
+        let junior_deposits = get_tranche_deposits<FA>(pool_address, TRANCHE_JUNIOR);
+
+        // Get base risk premium from governance (e.g., 3000 bps = 30% = 0.3)
+        let base_risk_premium_bps =
+            governance::get_base_risk_premium_bps(governance_address);
+
+        // Calculate dynamic multipliers based on pool composition
+        // Protection ratio = how many dollars of senior each junior dollar protects
+        // Junior multiplier = 1.0 + (protection_ratio x base_risk_premium)
+        // Senior multiplier = 1.0 - (inverse_ratio x base_risk_premium)
+
+        let senior_share: u64;
+        let junior_share: u64;
+
+        if (senior_deposits == 0 && junior_deposits == 0) {
+            // No deposits, no distribution
+            senior_share = 0;
+            junior_share = 0;
+        } else if (junior_deposits == 0) {
+            // Only senior depositors, they get all yield
+            senior_share = tranche_yield;
+            junior_share = 0;
+        } else if (senior_deposits == 0) {
+            // Only junior depositors, they get all yield
+            senior_share = 0;
+            junior_share = tranche_yield;
+        } else {
+            // Both tranches have deposits, calculate dynamic weights
+            // Using scaled math to avoid decimals: multiply by 10000 for precision
+
+            // protection_ratio = senior / junior (scaled by 10000)
+            let protection_ratio_scaled =
+                (senior_deposits as u128) * 10000 / (junior_deposits as u128);
+
+            // junior_multiplier = 1.0 + (protection_ratio x base_risk_premium)
+            // = 10000 + (protection_ratio_scaled x base_risk_premium_bps / 10000)
+            let junior_multiplier =
+                10000
+                    + (protection_ratio_scaled * (base_risk_premium_bps as u128) / 10000);
+
+            // inverse_ratio = junior / senior (scaled by 10000)
+            let inverse_ratio_scaled =
+                (junior_deposits as u128) * 10000 / (senior_deposits as u128);
+
+            // senior_multiplier = 1.0 - (inverse_ratio x base_risk_premium)
+            // = 10000 - (inverse_ratio_scaled x base_risk_premium_bps / 10000)
+            let senior_multiplier_calc =
+                (inverse_ratio_scaled * (base_risk_premium_bps as u128) / 10000);
+            let senior_multiplier =
+                if (10000 > senior_multiplier_calc) {
+                    10000 - senior_multiplier_calc
+                } else {
+                    1 // Minimum 0.0001x to avoid zero division
+                };
+
+            // Calculate weighted capital (scaled by 10000)
+            let senior_weight = (senior_deposits as u128) * senior_multiplier;
+            let junior_weight = (junior_deposits as u128) * junior_multiplier;
+            let total_weight = senior_weight + junior_weight;
+
+            // Distribute yield proportionally by weighted capital
+            senior_share = ((tranche_yield as u128) * senior_weight / total_weight as u64);
+            junior_share = ((tranche_yield as u128) * junior_weight / total_weight as u64);
+        };
+
+        // Update NAV multipliers for each tranche
+        update_nav_for_yield<FA>(pool_address, TRANCHE_SENIOR, senior_share);
+        update_nav_for_yield<FA>(pool_address, TRANCHE_JUNIOR, junior_share);
+
+        event::emit(
+            YieldDistributed {
+                pool_address,
+                total_interest,
+                protocol_reserve_share: protocol_share_u64,
+                senior_share,
+                junior_share,
+                timestamp: timestamp::now_seconds()
+            }
+        );
+    }
+
+    /// Allocate losses across tranches using waterfall
+    /// 1. Protocol Reserve absorbs first
+    /// 2. Junior tranche absorbs up to its full deposits
+    /// 3. Senior tranche absorbs up to its full deposits
+    public fun allocate_loss<FA>(pool_address: address, total_loss: u64) acquires Pool {
+        let remaining_loss = total_loss;
+
+        // Step 0: Protocol reserve absorbs first
+        let (_, _, protocol_reserve_balance, _, _, _) = get_pool_stats<FA>(pool_address);
+
+        let protocol_absorbed =
+            if (protocol_reserve_balance >= remaining_loss) {
+                remaining_loss
+            } else {
+                protocol_reserve_balance
+            };
+
+        remaining_loss -= protocol_absorbed;
+
+        // Deduct from protocol reserve
+        if (protocol_absorbed > 0) {
+            deduct_from_reserve<FA>(pool_address, protocol_absorbed);
+        };
+
+        let junior_absorbed = 0u64;
+        let senior_absorbed = 0u64;
+
+        if (remaining_loss > 0) {
+            // Step 1: Junior tranche absorbs (up to all junior deposits)
+            (remaining_loss, junior_absorbed) = absorb_loss_in_tranche<FA>(
+                pool_address, TRANCHE_JUNIOR, remaining_loss
+            );
+        };
+
+        if (remaining_loss > 0) {
+            // Step 2: Senior tranche absorbs remaining (up to all senior deposits)
+            (_, senior_absorbed) = absorb_loss_in_tranche<FA>(
+                pool_address, TRANCHE_SENIOR, remaining_loss
+            );
+            // If still remaining loss, protocol is insolvent
+            // This should trigger emergency procedures
+        };
+
+        event::emit(
+            LossAllocated {
+                pool_address,
+                total_loss,
+                protocol_reserve_absorbed: protocol_absorbed,
+                junior_absorbed,
+                senior_absorbed,
+                timestamp: timestamp::now_seconds()
+            }
+        );
+    }
+
+    /// Internal: Absorb loss in a specific tranche
+    /// Returns (remaining_loss, absorbed_amount)
+    fun absorb_loss_in_tranche<FA>(
+        pool_address: address, tranche: u8, loss_amount: u64
+    ): (u64, u64) acquires Pool {
+        // Get tranche deposits from pool
+        let tranche_deposits = get_tranche_deposits<FA>(pool_address, tranche);
+
+        let absorbed =
+            if (loss_amount <= tranche_deposits) {
+                loss_amount
+            } else {
+                tranche_deposits
+            };
+
+        let remaining = loss_amount - absorbed;
+
+        // Update NAV multiplier (decrease for loss)
+        update_nav_for_loss<FA>(pool_address, tranche, absorbed);
+
+        (remaining, absorbed)
+    }
+
+    /// Update NAV multiplier when yield is distributed
+    fun update_nav_for_yield<FA>(
+        pool_address: address, tranche: u8, yield_amount: u64
+    ) acquires Pool {
+        let old_multiplier = get_nav_multiplier<FA>(pool_address, tranche);
+
+        // Get tranche deposits from pool module
+        let tranche_deposits = get_tranche_deposits<FA>(pool_address, tranche);
+
+        if (tranche_deposits == 0) { return };
+
+        // New multiplier = old_multiplier * (1 + yield/deposits)
+        // NAV multipliers are scaled by 1e18
+        let yield_ratio =
+            (yield_amount as u128) * 1_000_000_000_000_000_000
+                / (tranche_deposits as u128);
+        let new_multiplier = old_multiplier + yield_ratio;
+
+        update_nav_multiplier<FA>(pool_address, tranche, new_multiplier);
+
+        event::emit(
+            NAVUpdated {
+                pool_address,
+                tranche,
+                old_multiplier,
+                new_multiplier,
+                timestamp: timestamp::now_seconds()
+            }
+        );
+    }
+
+    /// Update NAV multiplier when loss is allocated
+    fun update_nav_for_loss<FA>(
+        pool_address: address, tranche: u8, loss_amount: u64
+    ) acquires Pool {
+        let old_multiplier = get_nav_multiplier<FA>(pool_address, tranche);
+
+        // Get tranche deposits from pool module
+        let tranche_deposits = get_tranche_deposits<FA>(pool_address, tranche);
+
+        if (tranche_deposits == 0) { return };
+
+        // New multiplier = old_multiplier * (1 - loss/deposits)
+        let loss_ratio =
+            (loss_amount as u128) * 1_000_000_000_000_000_000
+                / (tranche_deposits as u128);
+
+        // Ensure we don't go negative
+        let new_multiplier =
+            if (old_multiplier > loss_ratio) {
+                old_multiplier - loss_ratio
+            } else { 0 };
+
+        update_nav_multiplier<FA>(pool_address, tranche, new_multiplier);
+
+        event::emit(
+            NAVUpdated {
+                pool_address,
+                tranche,
+                old_multiplier,
+                new_multiplier,
+                timestamp: timestamp::now_seconds()
+            }
+        );
+    }
+
+    /// Calculate current dynamic multipliers for a pool based on composition
+    /// Returns (senior_multiplier_bps, junior_multiplier_bps) scaled by 10000
+    /// Example: If senior multiplier is 0.925, returns 9250
+    #[view]
+    public fun calculate_current_multipliers<FA>(
+        pool_address: address, governance_address: address
+    ): (u64, u64) acquires Pool {
+        let senior_deposits = get_tranche_deposits<FA>(pool_address, TRANCHE_SENIOR);
+        let junior_deposits = get_tranche_deposits<FA>(pool_address, TRANCHE_JUNIOR);
+        let base_risk_premium_bps =
+            governance::get_base_risk_premium_bps(governance_address);
+
+        if (junior_deposits == 0) {
+            return (10000, 0) // Senior gets 1.0x, junior N/A
+        };
+
+        if (senior_deposits == 0) {
+            return (0, 10000) // Junior gets 1.0x, senior N/A
+        };
+
+        // protection_ratio = senior / junior (scaled by 10000)
+        let protection_ratio_scaled =
+            (senior_deposits as u128) * 10000 / (junior_deposits as u128);
+
+        // junior_multiplier = 1.0 + (protection_ratio x base_risk_premium)
+        let junior_multiplier =
+            10000 + (protection_ratio_scaled * (base_risk_premium_bps as u128) / 10000);
+
+        // inverse_ratio = junior / senior (scaled by 10000)
+        let inverse_ratio_scaled = (junior_deposits as u128) * 10000
+            / (senior_deposits as u128);
+
+        // senior_multiplier = 1.0 - (inverse_ratio x base_risk_premium)
+        let senior_multiplier_calc =
+            (inverse_ratio_scaled * (base_risk_premium_bps as u128) / 10000);
+        let senior_multiplier =
+            if (10000 > senior_multiplier_calc) {
+                10000 - senior_multiplier_calc
+            } else { 1 };
+
+        ((senior_multiplier as u64), (junior_multiplier as u64))
     }
 }

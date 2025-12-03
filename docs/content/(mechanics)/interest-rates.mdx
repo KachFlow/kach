@@ -191,8 +191,11 @@ graph TD
    - Goes to protocol reserve
    - Covers operations, development, reserves
 
-2. **Remaining 93%** distributed across tranches using weighted capital:
-   - Compute weights: `w_senior = senior_deposits × senior_multiplier`, `w_junior = junior_deposits × junior_multiplier` (e.g., 0.8× senior, 1.3× junior; governance-tunable)
+2. **Remaining 93%** distributed across tranches using dynamically calculated weighted capital:
+   - Multipliers are calculated based on pool composition and base risk premium (governance parameter)
+   - `junior_multiplier = 1.0 + (protection_ratio × base_risk_premium)`
+   - `senior_multiplier = 1.0 - (inverse_ratio × base_risk_premium)`
+   - Compute weights: `w_senior = senior_deposits × senior_multiplier`, `w_junior = junior_deposits × junior_multiplier`
    - `total_w = w_senior + w_junior`
    - Senior share = `interest_after_fee × (w_senior / total_w)`
    - Junior share = `interest_after_fee × (w_junior / total_w)`
@@ -205,17 +208,22 @@ graph TD
 - Protocol: $600 × 0.07 = **$42**
 - Remaining: $600 - $42 = $558
 
-**Step 2: Tranche Distribution (capital-weighted)**
+**Step 2: Tranche Distribution (dynamically weighted)**
 - Example deposits: Senior $80M, Junior $20M
-- Multipliers: Senior 0.8×, Junior 1.3×
-- Weights: `w_senior = 80M × 0.8 = 64M`; `w_junior = 20M × 1.3 = 26M`
-- Total weight: `90M`
-- Senior share: $558 × (64/90) = **$396.80**
-- Junior share: $558 × (26/90) = **$161.20**
+- Base risk premium: 30% (3000 bps)
+- Calculated multipliers:
+  - Protection ratio: 80M / 20M = 4.0
+  - Junior multiplier: 1.0 + (4.0 × 0.30) = 2.2×
+  - Inverse ratio: 20M / 80M = 0.25
+  - Senior multiplier: 1.0 - (0.25 × 0.30) = 0.925×
+- Weights: `w_senior = 80M × 0.925 = 74M`; `w_junior = 20M × 2.2 = 44M`
+- Total weight: `118M`
+- Senior share: $558 × (74/118) = **$350**
+- Junior share: $558 × (44/118) = **$208**
 
 **Per-Dollar Yield** (with weighted capital example above):
-- Senior per-dollar: $396.80 / $80M = 0.000496% per cycle
-- Junior per-dollar: $161.20 / $20M = 0.000806% per cycle
+- Senior per-dollar: $350 / $80M = 0.0004375% per cycle
+- Junior per-dollar: $208 / $20M = 0.00104% per cycle
 
 At full 80% utilization and continuous cycling, these multiply significantly.
 

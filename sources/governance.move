@@ -20,13 +20,8 @@ module kach::governance {
     const E_GOVERNANCE_EXISTS: u64 = 7;
     /// Error when trying to mutate governance before initialization.
     const E_GOVERNANCE_NOT_FOUND: u64 = 8;
-
-    /// Role identifier for administrators.
-    const ROLE_ADMIN: u8 = 0;
-    /// Role identifier for routine operators.
-    const ROLE_OPERATOR: u8 = 1;
-    /// Role identifier for emergency responders.
-    const ROLE_EMERGENCY: u8 = 2;
+    /// Error when an action is blocked because the protocol is globally paused.
+    const E_PROTOCOL_PAUSED: u64 = 9;
 
     /// Global governance configuration
     /// Stored at protocol deployer address
@@ -41,7 +36,7 @@ module kach::governance {
         emergency_responders: vector<address>,
 
         // Protocol parameters
-        protocol_fee_bps: u64, // Default protocol fee (e.g., 500 = 5%)
+        protocol_fee_bps: u64, // Default protocol fee (e.g., 700 = 7%)
         max_utilization_bps: u64, // Default max utilization (e.g., 8000 = 80%)
         min_lock_duration_seconds: u64, // Minimum position lock time
         max_lock_duration_seconds: u64, // Maximum position lock time
@@ -55,13 +50,13 @@ module kach::governance {
 
         // Trust score parameters
         trust_power_bps: u64, // Power for per-loan weighting (e.g., 8000 = 0.8 for concave)
-        trust_w_late_bps: u64, // Severity multiplier for late payments (e.g., 20000 = 2.0×)
-        trust_w_default_bps: u64, // Severity multiplier for defaults (e.g., 50000 = 5.0×)
+        trust_w_late_bps: u64, // Severity multiplier for late payments (e.g., 20000 = 2.0x)
+        trust_w_default_bps: u64, // Severity multiplier for defaults (e.g., 50000 = 5.0x)
         trust_decay_factor_bps: u64, // Decay factor per interval (e.g., 9500 = 0.95)
         trust_decay_interval_seconds: u64, // Decay interval in seconds (e.g., 2592000 = 30 days)
         trust_volume_weight_bps: u64, // Weight for volume score vs count (e.g., 7000 = 70% volume, 30% count)
         trust_confidence_divisor: u64, // Confidence scaling divisor (e.g., 50 loans for 1.0 bonus)
-        trust_anti_gaming_k_bps: u64, // Anti-gaming multiplier k (e.g., 15000 = 1.5×)
+        trust_anti_gaming_k_bps: u64, // Anti-gaming multiplier k (e.g., 15000 = 1.5x)
 
         // Emergency controls
         global_pause: bool,
@@ -174,7 +169,7 @@ module kach::governance {
         assert!(trust_volume_weight_bps <= 10000, E_INVALID_PARAMETER); // Max 100%
 
         let admins = vector::empty<address>();
-        vector::push_back(&mut admins, deployer_addr);
+        admins.push_back(deployer_addr);
 
         let config = GovernanceConfig {
             admins,
@@ -212,9 +207,7 @@ module kach::governance {
 
     /// Add a new admin (requires existing admin)
     public entry fun add_admin(
-        admin: &signer,
-        new_admin: address,
-        governance_addr: address
+        admin: &signer, new_admin: address, governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -227,7 +220,7 @@ module kach::governance {
         // Verify new_admin is not already admin
         assert!(!is_admin_internal(&config.admins, new_admin), E_ALREADY_ADMIN);
 
-        vector::push_back(&mut config.admins, new_admin);
+        config.admins.push_back(new_admin);
         config.last_updated = timestamp::now_seconds();
 
         event::emit(
@@ -241,9 +234,7 @@ module kach::governance {
 
     /// Remove an admin (requires existing admin, cannot remove last admin)
     public entry fun remove_admin(
-        admin: &signer,
-        admin_to_remove: address,
-        governance_addr: address
+        admin: &signer, admin_to_remove: address, governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -254,13 +245,13 @@ module kach::governance {
         assert!(is_admin_internal(&config.admins, admin_addr), E_NOT_AUTHORIZED);
 
         // Verify not removing last admin
-        assert!(vector::length(&config.admins) > 1, E_NOT_AUTHORIZED);
+        assert!(config.admins.length() > 1, E_NOT_AUTHORIZED);
 
         // Find and remove admin
-        let (found, index) = vector::index_of(&config.admins, &admin_to_remove);
+        let (found, index) = config.admins.index_of(&admin_to_remove);
         assert!(found, E_NOT_ADMIN);
 
-        vector::remove(&mut config.admins, index);
+        config.admins.remove(index);
         config.last_updated = timestamp::now_seconds();
 
         event::emit(
@@ -274,9 +265,7 @@ module kach::governance {
 
     /// Add operator
     public entry fun add_operator(
-        admin: &signer,
-        new_operator: address,
-        governance_addr: address
+        admin: &signer, new_operator: address, governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -288,7 +277,7 @@ module kach::governance {
             !is_operator_internal(&config.operators, new_operator), E_ALREADY_OPERATOR
         );
 
-        vector::push_back(&mut config.operators, new_operator);
+        config.operators.push_back(new_operator);
         config.last_updated = timestamp::now_seconds();
 
         event::emit(
@@ -302,9 +291,7 @@ module kach::governance {
 
     /// Remove operator
     public entry fun remove_operator(
-        admin: &signer,
-        operator_to_remove: address,
-        governance_addr: address
+        admin: &signer, operator_to_remove: address, governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -313,10 +300,10 @@ module kach::governance {
 
         assert!(is_admin_internal(&config.admins, admin_addr), E_NOT_AUTHORIZED);
 
-        let (found, index) = vector::index_of(&config.operators, &operator_to_remove);
+        let (found, index) = config.operators.index_of(&operator_to_remove);
         assert!(found, E_NOT_OPERATOR);
 
-        vector::remove(&mut config.operators, index);
+        config.operators.remove(index);
         config.last_updated = timestamp::now_seconds();
 
         event::emit(
@@ -330,9 +317,7 @@ module kach::governance {
 
     /// Add emergency responder
     public entry fun add_emergency_responder(
-        admin: &signer,
-        new_responder: address,
-        governance_addr: address
+        admin: &signer, new_responder: address, governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -341,7 +326,7 @@ module kach::governance {
 
         assert!(is_admin_internal(&config.admins, admin_addr), E_NOT_AUTHORIZED);
 
-        vector::push_back(&mut config.emergency_responders, new_responder);
+        config.emergency_responders.push_back(new_responder);
         config.last_updated = timestamp::now_seconds();
 
         event::emit(
@@ -355,9 +340,7 @@ module kach::governance {
 
     /// Remove emergency responder
     public entry fun remove_emergency_responder(
-        admin: &signer,
-        responder_to_remove: address,
-        governance_addr: address
+        admin: &signer, responder_to_remove: address, governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -366,12 +349,10 @@ module kach::governance {
 
         assert!(is_admin_internal(&config.admins, admin_addr), E_NOT_AUTHORIZED);
 
-        let (found, index) = vector::index_of(
-            &config.emergency_responders, &responder_to_remove
-        );
+        let (found, index) = config.emergency_responders.index_of(&responder_to_remove);
         assert!(found, E_NOT_AUTHORIZED);
 
-        vector::remove(&mut config.emergency_responders, index);
+        config.emergency_responders.remove(index);
         config.last_updated = timestamp::now_seconds();
 
         event::emit(
@@ -385,9 +366,7 @@ module kach::governance {
 
     /// Update protocol fee (admin only)
     public entry fun update_protocol_fee_bps(
-        admin: &signer,
-        new_fee_bps: u64,
-        governance_addr: address
+        admin: &signer, new_fee_bps: u64, governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -414,9 +393,7 @@ module kach::governance {
 
     /// Update max utilization (admin only)
     public entry fun update_max_utilization_bps(
-        admin: &signer,
-        new_max_bps: u64,
-        governance_addr: address
+        admin: &signer, new_max_bps: u64, governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -443,9 +420,7 @@ module kach::governance {
 
     /// Update minimum trust score threshold (admin only)
     public entry fun update_min_trust_score(
-        admin: &signer,
-        new_threshold: u64,
-        governance_addr: address
+        admin: &signer, new_threshold: u64, governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -472,9 +447,7 @@ module kach::governance {
 
     /// Update base risk premium (admin only)
     public entry fun update_base_risk_premium(
-        admin: &signer,
-        new_premium_bps: u64,
-        governance_addr: address
+        admin: &signer, new_premium_bps: u64, governance_addr: address
     ) acquires GovernanceConfig {
         let admin_addr = signer::address_of(admin);
 
@@ -538,19 +511,19 @@ module kach::governance {
 
     /// Internal helper to check if address is admin
     fun is_admin_internal(admins: &vector<address>, addr: address): bool {
-        vector::contains(admins, &addr)
+        admins.contains(&addr)
     }
 
     /// Internal helper to check if address is operator
     fun is_operator_internal(operators: &vector<address>, addr: address): bool {
-        vector::contains(operators, &addr)
+        operators.contains(&addr)
     }
 
     /// Internal helper to check if address is emergency responder
     fun is_emergency_responder_internal(
         responders: &vector<address>, addr: address
     ): bool {
-        vector::contains(responders, &addr)
+        responders.contains(&addr)
     }
 
     /// Public view functions
@@ -584,6 +557,102 @@ module kach::governance {
         is_emergency_responder_internal(&config.emergency_responders, addr)
     }
 
+    // ===== Capability-Based Permissions =====
+    // Instead of checking roles, check if an address can perform specific actions
+
+    /// Can this address pause a pool?
+    /// Allowed: admins, emergency_responders
+    #[view]
+    public fun can_pause_pool(governance_addr: address, addr: address): bool acquires GovernanceConfig {
+        if (!exists<GovernanceConfig>(governance_addr)) {
+            return false
+        };
+        let config = borrow_global<GovernanceConfig>(governance_addr);
+        is_admin_internal(&config.admins, addr)
+            || is_emergency_responder_internal(&config.emergency_responders, addr)
+    }
+
+    /// Can this address unpause a pool?
+    /// Allowed: admins only (not emergency responders)
+    #[view]
+    public fun can_unpause_pool(
+        governance_addr: address, addr: address
+    ): bool acquires GovernanceConfig {
+        if (!exists<GovernanceConfig>(governance_addr)) {
+            return false
+        };
+        let config = borrow_global<GovernanceConfig>(governance_addr);
+        is_admin_internal(&config.admins, addr)
+    }
+
+    /// Can this address create a new pool?
+    /// Allowed: admins only
+    #[view]
+    public fun can_create_pool(
+        governance_addr: address, addr: address
+    ): bool acquires GovernanceConfig {
+        if (!exists<GovernanceConfig>(governance_addr)) {
+            return false
+        };
+        let config = borrow_global<GovernanceConfig>(governance_addr);
+        is_admin_internal(&config.admins, addr)
+    }
+
+    /// Can this address create credit lines?
+    /// Allowed: admins, operators
+    #[view]
+    public fun can_create_credit_line(
+        governance_addr: address, addr: address
+    ): bool acquires GovernanceConfig {
+        if (!exists<GovernanceConfig>(governance_addr)) {
+            return false
+        };
+        let config = borrow_global<GovernanceConfig>(governance_addr);
+        is_admin_internal(&config.admins, addr)
+            || is_operator_internal(&config.operators, addr)
+    }
+
+    /// Can this address update protocol parameters?
+    /// Allowed: admins only
+    #[view]
+    public fun can_update_parameters(
+        governance_addr: address, addr: address
+    ): bool acquires GovernanceConfig {
+        if (!exists<GovernanceConfig>(governance_addr)) {
+            return false
+        };
+        let config = borrow_global<GovernanceConfig>(governance_addr);
+        is_admin_internal(&config.admins, addr)
+    }
+
+    /// Can this address manage trust scores (approve/revoke attestators)?
+    /// Allowed: admins, operators
+    #[view]
+    public fun can_manage_trust_scores(
+        governance_addr: address, addr: address
+    ): bool acquires GovernanceConfig {
+        if (!exists<GovernanceConfig>(governance_addr)) {
+            return false
+        };
+        let config = borrow_global<GovernanceConfig>(governance_addr);
+        is_admin_internal(&config.admins, addr)
+            || is_operator_internal(&config.operators, addr)
+    }
+
+    /// Can this address manage attestators (create/revoke attestations)?
+    /// Allowed: admins, operators
+    #[view]
+    public fun can_manage_attestators(
+        governance_addr: address, addr: address
+    ): bool acquires GovernanceConfig {
+        if (!exists<GovernanceConfig>(governance_addr)) {
+            return false
+        };
+        let config = borrow_global<GovernanceConfig>(governance_addr);
+        is_admin_internal(&config.admins, addr)
+            || is_operator_internal(&config.operators, addr)
+    }
+
     #[view]
     public fun is_globally_paused(governance_addr: address): bool acquires GovernanceConfig {
         if (!exists<GovernanceConfig>(governance_addr)) {
@@ -591,6 +660,63 @@ module kach::governance {
         };
         let config = borrow_global<GovernanceConfig>(governance_addr);
         config.global_pause
+    }
+
+    // ===== Assertion Helpers =====
+    // These functions centralize governance checks with proper error messages
+
+    /// Assert that protocol is not globally paused
+    public fun assert_not_globally_paused(governance_addr: address) acquires GovernanceConfig {
+        assert!(!is_globally_paused(governance_addr), E_PROTOCOL_PAUSED);
+    }
+
+    /// Assert that caller can pause a pool
+    public fun assert_can_pause_pool(
+        governance_addr: address, caller: address
+    ) acquires GovernanceConfig {
+        assert!(can_pause_pool(governance_addr, caller), E_NOT_AUTHORIZED);
+    }
+
+    /// Assert that caller can unpause a pool
+    public fun assert_can_unpause_pool(
+        governance_addr: address, caller: address
+    ) acquires GovernanceConfig {
+        assert!(can_unpause_pool(governance_addr, caller), E_NOT_AUTHORIZED);
+    }
+
+    /// Assert that caller can create a pool
+    public fun assert_can_create_pool(
+        governance_addr: address, caller: address
+    ) acquires GovernanceConfig {
+        assert!(can_create_pool(governance_addr, caller), E_NOT_AUTHORIZED);
+    }
+
+    /// Assert that caller can create credit lines
+    public fun assert_can_create_credit_line(
+        governance_addr: address, caller: address
+    ) acquires GovernanceConfig {
+        assert!(can_create_credit_line(governance_addr, caller), E_NOT_AUTHORIZED);
+    }
+
+    /// Assert that caller can update parameters
+    public fun assert_can_update_parameters(
+        governance_addr: address, caller: address
+    ) acquires GovernanceConfig {
+        assert!(can_update_parameters(governance_addr, caller), E_NOT_AUTHORIZED);
+    }
+
+    /// Assert that caller can manage trust scores
+    public fun assert_can_manage_trust_scores(
+        governance_addr: address, caller: address
+    ) acquires GovernanceConfig {
+        assert!(can_manage_trust_scores(governance_addr, caller), E_NOT_AUTHORIZED);
+    }
+
+    /// Assert that caller can manage attestators
+    public fun assert_can_manage_attestators(
+        governance_addr: address, caller: address
+    ) acquires GovernanceConfig {
+        assert!(can_manage_attestators(governance_addr, caller), E_NOT_AUTHORIZED);
     }
 
     #[view]
@@ -713,5 +839,46 @@ module kach::governance {
     public fun get_trust_anti_gaming_k_bps(governance_addr: address): u64 acquires GovernanceConfig {
         assert!(exists<GovernanceConfig>(governance_addr), E_GOVERNANCE_NOT_FOUND);
         borrow_global<GovernanceConfig>(governance_addr).trust_anti_gaming_k_bps
+    }
+
+    /// Trust score decay parameters
+    #[view]
+    public fun get_trust_score_decay_rate_bps(_governance_addr: address): u64 {
+        // Default: 200 bps = 2% decay per period
+        200
+    }
+
+    #[view]
+    public fun get_trust_score_decay_period_seconds(
+        _governance_addr: address
+    ): u64 {
+        // Default: 30 days in seconds
+        2592000
+    }
+
+    /// Trust score weight parameters (sum should be 100)
+    #[view]
+    public fun get_trust_score_on_time_weight(_governance_addr: address): u64 {
+        // Default: On-time payments weighted at 100%
+        100
+    }
+
+    #[view]
+    public fun get_trust_score_late_weight(_governance_addr: address): u64 {
+        // Default: Late payments weighted at 50%
+        50
+    }
+
+    #[view]
+    public fun get_trust_score_default_weight(_governance_addr: address): u64 {
+        // Default: Defaults weighted at 150%
+        150
+    }
+
+    /// Loan multiplier for anti-gaming (max loan = multiplier * good_volume / 100)
+    #[view]
+    public fun get_trust_score_loan_multiplier(_governance_addr: address): u64 {
+        // Default: 150 (1.5x good volume)
+        150
     }
 }
