@@ -99,9 +99,7 @@ jobs:
           git commit -m "chore: bump version to $NEW_VERSION" || echo "No changes to commit"
           git push origin ${{ github.ref_name }}
 
-          # Publish to npm
-          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
-          bun run build
+          # Publish to npm (prepublishOnly will run build automatically)
           bun publish --access public
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
