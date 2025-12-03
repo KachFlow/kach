@@ -99,6 +99,9 @@ jobs:
           git commit -m "chore: bump version to $NEW_VERSION" || echo "No changes to commit"
           git push origin ${{ github.ref_name }}
 
+          # Copy README for npm package (won't be committed)
+          cp ../README.md .
+
           # Publish to npm (prepublishOnly will run build automatically)
           bun publish --access public
         env:
