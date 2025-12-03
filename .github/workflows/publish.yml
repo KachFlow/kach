@@ -5,6 +5,9 @@ on:
     branches:
       - main
       - move
+    paths:
+      - 'sources/**/*.move'
+      - 'Move.toml'
   workflow_dispatch:
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
